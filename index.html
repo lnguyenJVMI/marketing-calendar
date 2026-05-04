@@ -36,10 +36,7 @@
             color: rgba(255,255,255,0.7);
             transition: all 0.3s ease;
         }
-        .nav-btn.active {
-            background: white;
-            color: var(--jv-blue);
-        }
+        .nav-btn.active { background: white; color: var(--jv-blue); }
 
         .panel { display: none; } .panel.active { display: block; }
         .card { background: white; padding: 20px; border-radius: 12px; border: 1px solid #cbd5e1; margin-bottom: 20px; }
@@ -108,9 +105,7 @@
             document.querySelectorAll(".panel").forEach(p => p.classList.remove('active'));
             document.querySelectorAll(".nav-btn").forEach(b => b.classList.remove('active'));
             document.getElementById(id).classList.add('active');
-            if(event && event.currentTarget) {
-                event.currentTarget.classList.add('active');
-            }
+            if(event && event.currentTarget) event.currentTarget.classList.add('active');
         }
 
         function jump(date) {
