@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Jewish Voice Marketing Calendar Generator - Smart Flexible Version.
-Handles extra spaces, capitalization, and typos in column names.
+Jewish Voice Marketing Calendar Generator - Folder-Based Version.
+Automatically finds and processes ANY .xlsx or .csv files in .github/datafiles/
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ import argparse
 import html
 import json
 import re
+import os
 from dataclasses import dataclass, asdict, field
 from datetime import datetime
 from pathlib import Path
@@ -51,7 +52,6 @@ def normalized(value: object) -> str:
     return val
 
 def normalize_col(column: object) -> str:
-    # Remove all non-alphanumeric characters and lowercase for matching
     return re.sub(r"[^a-z0-9]", "", str(column).lower())
 
 def find_col(df_cols: Iterable[str], target: str) -> Optional[str]:
@@ -74,75 +74,89 @@ def parse_date(value: object) -> str:
         return parsed.strftime("%Y-%m-%d")
     return text
 
-def load_calendar_data(path: Path) -> tuple[list[CalendarItem], list[TapingDate]]:
-    items: list[CalendarItem] = []
-    tapings: list[TapingDate] = []
-    
-    if not path.exists():
-        return items, tapings
+def process_dataframe(df: pd.DataFrame, source_name: str) -> list[CalendarItem]:
+    items = []
+    cols = df.columns
+    c_desc = find_col(cols, "Description") or find_col(cols, "Name of Communication") or find_col(cols, "Title") or find_col(cols, "Task Name")
+    c_date = find_col(cols, "Target Date") or find_col(cols, "Air Date") or find_col(cols, "Due Date") or find_col(cols, "Date")
+    c_type = find_col(cols, "Type") or find_col(cols, "Category") or find_col(cols, "Section")
+    c_prod = find_col(cols, "Producer") or find_col(cols, "Owner") or find_col(cols, "Assignee")
+    c_aud = find_col(cols, "Audience")
+    c_link = find_col(cols, "Vanity Link") or find_col(cols, "Ops Database for Offer Codes") or find_col(cols, "Vanity linl") or find_col(cols, "Link")
+    c_job = find_col(cols, "BBS Job Number") or find_col(cols, "Job Number")
+    c_prem = find_col(cols, "Premium")
+    c_art = find_col(cols, "BBS Final Art") or find_col(cols, "Final Art")
+    c_seg = find_col(cols, "Segment Code")
+    c_notes = find_col(cols, "Notes") or find_col(cols, "Subject")
 
-    xl = pd.ExcelFile(path)
-    for sheet_name in xl.sheet_names:
-        df = xl.parse(sheet_name)
+    if not c_desc:
+        return items
+
+    for _, row in df.iterrows():
+        title = normalized(row.get(c_desc))
+        if not title: continue
         
-        if "taping" in sheet_name.lower():
-            for col in df.columns:
-                if any(m in str(col).lower() for m in ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]):
-                    tapings.append(TapingDate(title="Taping Session", date=str(col)))
-                for val in df[col].dropna():
-                    tapings.append(TapingDate(title="Taping Session", date=str(val)))
-            continue
+        date = parse_date(row.get(c_date)) if c_date else ""
+        category = normalized(row.get(c_type)) if c_type else "General"
+        
+        if "broadcast" in (title + " " + category).lower() or "tv" in (title + " " + category).lower():
+            category = "Broadcast/TV"
 
-        # Smart column mapping
-        cols = df.columns
-        c_desc = find_col(cols, "Description") or find_col(cols, "Name of Communication") or find_col(cols, "Title")
-        c_date = find_col(cols, "Target Date") or find_col(cols, "Air Date") or find_col(cols, "Date")
-        c_type = find_col(cols, "Type") or find_col(cols, "Category")
-        c_prod = find_col(cols, "Producer") or find_col(cols, "Owner")
-        c_aud = find_col(cols, "Audience")
-        c_link = find_col(cols, "Vanity Link") or find_col(cols, "Ops Database for Offer Codes") or find_col(cols, "Vanity linl")
-        c_job = find_col(cols, "BBS Job Number") or find_col(cols, "Job Number")
-        c_prem = find_col(cols, "Premium")
-        c_art = find_col(cols, "BBS Final Art") or find_col(cols, "Final Art")
-        c_seg = find_col(cols, "Segment Code")
-        c_notes = find_col(cols, "Notes") or find_col(cols, "Subject")
+        items.append(CalendarItem(
+            title=title, date=date, source=source_name, category=category,
+            owner=normalized(row.get(c_prod)) if c_prod else "",
+            audience=normalized(row.get(c_aud)) if c_aud else "",
+            link=normalized(row.get(c_link)) if c_link else "",
+            notes=normalized(row.get(c_notes)) if c_notes else "",
+            job_number=normalized(row.get(c_job)) if c_job else "",
+            premium=normalized(row.get(c_prem)) if c_prem else "",
+            final_art=normalized(row.get(c_art)) if c_art else "",
+            segment_code=normalized(row.get(c_seg)) if c_seg else "",
+        ))
+    return items
 
-        if not c_desc:
-            continue
+def load_from_folder(folder_path: Path) -> tuple[list[CalendarItem], list[TapingDate]]:
+    all_items: list[CalendarItem] = []
+    all_tapings: list[TapingDate] = []
+    
+    if not folder_path.exists():
+        print(f"Warning: Folder {folder_path} not found.")
+        return all_items, all_tapings
 
-        for _, row in df.iterrows():
-            title = normalized(row.get(c_desc))
-            if not title:
-                continue
-                
-            date = parse_date(row.get(c_date)) if c_date else ""
-            category = normalized(row.get(c_type)) if c_type else "General"
+    for file in os.listdir(folder_path):
+        path = folder_path / file
+        
+        if path.suffix.lower() == ".xlsx" and not file.startswith("~$"):
+            print(f"Processing Excel: {file}")
+            try:
+                xl = pd.ExcelFile(path)
+                for sheet in xl.sheet_names:
+                    df = xl.parse(sheet)
+                    if "taping" in sheet.lower():
+                        for col in df.columns:
+                            if any(m in str(col).lower() for m in ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]):
+                                all_tapings.append(TapingDate(title="Taping Session", date=str(col)))
+                            for val in df[col].dropna():
+                                all_tapings.append(TapingDate(title="Taping Session", date=str(val)))
+                    else:
+                        all_items.extend(process_dataframe(df, f"Excel ({file})"))
+            except Exception as e:
+                print(f"Error reading {file}: {e}")
+
+        elif path.suffix.lower() == ".csv":
+            print(f"Processing CSV: {file}")
+            try:
+                df_csv = pd.read_csv(path)
+                all_items.extend(process_dataframe(df_csv, f"CSV ({file})"))
+            except Exception as e:
+                print(f"Error reading {file}: {e}")
             
-            if "broadcast" in (title + " " + category).lower() or "tv" in (title + " " + category).lower():
-                category = "Broadcast/TV"
-
-            items.append(CalendarItem(
-                title=title,
-                date=date,
-                source="Communications Calendar",
-                category=category,
-                owner=normalized(row.get(c_prod)) if c_prod else "",
-                audience=normalized(row.get(c_aud)) if c_aud else "",
-                link=normalized(row.get(c_link)) if c_link else "",
-                notes=normalized(row.get(c_notes)) if c_notes else "",
-                job_number=normalized(row.get(c_job)) if c_job else "",
-                premium=normalized(row.get(c_prem)) if c_prem else "",
-                final_art=normalized(row.get(c_art)) if c_art else "",
-                segment_code=normalized(row.get(c_seg)) if c_seg else "",
-            ))
-            
-    return items, tapings
+    return all_items, all_tapings
 
 def generate_html(items: list[CalendarItem], tapings: list[TapingDate], title: str) -> str:
     today = datetime.now().strftime("%Y-%m-%d")
     items_sorted = sorted([i for i in items if i.date], key=lambda x: x.date)
     undated = [i for i in items if not i.date]
-    
     broadcast = [i for i in items_sorted if i.category == "Broadcast/TV"]
 
     payload = {
@@ -327,14 +341,14 @@ init();
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--xlsx", type=Path, required=True)
+    parser.add_argument("--data-dir", type=Path, default=Path(".github/datafiles"))
     parser.add_argument("--output", type=Path, default=Path("index.html"))
     args = parser.parse_args()
 
-    items, tapings = load_calendar_data(args.xlsx)
+    items, tapings = load_from_folder(args.data_dir)
     html_content = generate_html(items, tapings, "Jewish Voice Marketing Calendar")
     args.output.write_text(html_content, encoding="utf-8")
-    print(f"Generated {args.output} with {len(items)} items.")
+    print(f"Generated {args.output} with {len(items)} items from {args.data_dir}.")
 
 if __name__ == "__main__":
     main()
