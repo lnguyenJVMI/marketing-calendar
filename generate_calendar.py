@@ -181,12 +181,12 @@ def main():
             unique_tapings.append(t); seen_tapings.add(t.date)
 
     # Generate HTML (Simplified for reliability)
-    payload = json.dumps({{
+    payload = json.dumps({
         "items": [asdict(i) for i in all_items],
         "broadcast": [asdict(i) for i in all_items if i.category == "Broadcast/TV"],
         "tapings": [asdict(t) for t in unique_tapings],
         "updated": datetime.now().strftime("%b %d, %Y")
-    }}, ensure_ascii=False)
+    }, ensure_ascii=False)
 
     html_template = f"""<!DOCTYPE html>
 <html lang="en">
