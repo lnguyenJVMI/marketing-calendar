@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+from openpyxl import load_workbook as _xl_load_workbook
 
 ROOT = Path(__file__).resolve().parent
 TEMPLATE_PATH = ROOT / "template.html"
@@ -177,8 +178,11 @@ def parse_dated_sheet(df: pd.DataFrame) -> list[dict]:
             "audience": clean_str(row[c_audience]) if c_audience else "",
             "job": clean_str(row[c_job]) if c_job else "",
             "vanity": clean_str(row[c_vanity]) if c_vanity else "",
+            "vanity_url": "",   # filled in later from embedded hyperlinks
             "premium": coerce_premium(row[c_premium]) if c_premium else "",
+            "premium_url": "",  # filled in later from embedded hyperlinks
             "art": clean_str(row[c_art]) if c_art else "",
+            "art_url": "",      # filled in later from embedded hyperlinks
             "segment": clean_str(row[c_seg]) if c_seg else "",
         })
     items.sort(key=lambda it: it["date"])
@@ -283,6 +287,65 @@ def parse_tapings_sheet(df: pd.DataFrame, default_year: int) -> list[dict]:
 
 
 # --------------------------------------------------------------------------- #
+# embedded hyperlink enrichment
+# --------------------------------------------------------------------------- #
+def _enrich_with_hyperlinks(path: Path, dated: list[dict]) -> None:
+    """Mutates `dated` items in place, attaching vanity_url / premium_url / art_url
+    pulled from Excel cell.hyperlink targets. Matches by ISO date + title.
+    """
+    wb = _xl_load_workbook(path, data_only=True)
+    target_sheets = [s for s in wb.sheetnames if s.strip().lower() in DATED_SHEET_NAMES]
+    if not target_sheets:
+        return
+
+    # Build a lookup: (iso_date, title) -> item
+    lookup: dict[tuple[str, str], dict] = {}
+    for it in dated:
+        lookup[(it["date"], it["title"].strip().lower())] = it
+
+    for sn in target_sheets:
+        ws = wb[sn]
+        # Map header text -> column index (1-based)
+        header_row = 1
+        headers: dict[str, int] = {}
+        for c in ws[header_row]:
+            if c.value is not None:
+                headers[str(c.value).strip().lower()] = c.column
+
+        def hcol(*names: str) -> int | None:
+            for n in names:
+                if n.lower() in headers:
+                    return headers[n.lower()]
+            return None
+
+        c_desc = hcol("Description", "Title", "Name")
+        c_date = hcol("Target Date", "Date", "Air Date", "Publish Date")
+        col_map = {
+            "vanity_url":  hcol("Vanity Link", "Link", "URL"),
+            "premium_url": hcol("Premium"),
+            "art_url":     hcol("BBS Final Art", "Final Art", "Art"),
+        }
+
+        for r in range(header_row + 1, ws.max_row + 1):
+            if not c_desc or not c_date:
+                break
+            iso = to_iso_date(ws.cell(row=r, column=c_date).value)
+            title_v = ws.cell(row=r, column=c_desc).value
+            title = clean_str(title_v).strip().lower()
+            if not iso or not title:
+                continue
+            item = lookup.get((iso, title))
+            if not item:
+                continue
+            for key, col_idx in col_map.items():
+                if not col_idx:
+                    continue
+                cell = ws.cell(row=r, column=col_idx)
+                if cell.hyperlink and getattr(cell.hyperlink, "target", None):
+                    item[key] = str(cell.hyperlink.target)
+
+
+# --------------------------------------------------------------------------- #
 # main
 # --------------------------------------------------------------------------- #
 def load_workbook(path: Path) -> tuple[list[dict], list[dict], list[dict]]:
@@ -309,6 +372,12 @@ def load_workbook(path: Path) -> tuple[list[dict], list[dict], list[dict]]:
             dated.extend(parse_dated_sheet(df))
     if dated:
         default_year = int(dated[0]["date"][:4])
+
+    # Second pass: enrich dated rows with embedded hyperlinks via openpyxl
+    try:
+        _enrich_with_hyperlinks(path, dated)
+    except Exception as exc:
+        print(f"  (could not read embedded hyperlinks: {exc})")
 
     for sn in xls.sheet_names:
         norm = sn.strip().lower()

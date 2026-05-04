@@ -272,6 +272,10 @@
     var d = parseDate(it.date);
     var prem = (typeof it.premium === "string") ? it.premium
              : (it.premium ? "Premium" : "");
+    // Prefer embedded hyperlink (from Excel) over a URL guessed from the visible text.
+    var vanityHref = (it.vanity_url ? String(it.vanity_url) : "") || normalizeUrl(it.vanity);
+    var premiumHref = (it.premium_url ? String(it.premium_url) : "") || normalizeUrl(it.premium);
+    var artHref = (it.art_url ? String(it.art_url) : "") || normalizeUrl(it.art);
     return {
       raw: it,
       date: d,
@@ -281,10 +285,12 @@
       audience: it.audience || "",
       job: it.job || "",
       vanity: it.vanity || "",
-      vanity_href: normalizeUrl(it.vanity),
+      vanity_href: vanityHref,
       premium: prem,                 // string: "" means none
       premium_on: !!(prem && prem.toLowerCase() !== "none"),
+      premium_href: premiumHref,
       art: it.art || "",
+      art_href: artHref,
       segment: it.segment || ""
     };
   }).filter(function(e){ return e.date; });
@@ -407,9 +413,15 @@
       } else {
         link = "—";
       }
-      var premCell = ev.premium_on
-        ? '<span class="badge prem">Premium</span><div style="font-size:12px;color:#374151;margin-top:4px">' + escapeHtml(ev.premium) + '</div>'
-        : "—";
+      var premCell;
+      if(ev.premium_on){
+        var premText = ev.premium_href
+          ? '<a href="' + escapeHtml(ev.premium_href) + '" target="_blank" rel="noopener">' + escapeHtml(ev.premium) + '</a>'
+          : escapeHtml(ev.premium);
+        premCell = '<span class="badge prem">Premium</span><div style="font-size:12px;color:#374151;margin-top:4px">' + premText + '</div>';
+      } else {
+        premCell = "—";
+      }
       tr.innerHTML =
         "<td>" + fmtDateLong(ev.date) + "</td>" +
         "<td><strong>" + escapeHtml(ev.title) + "</strong>" +
