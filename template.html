@@ -48,28 +48,33 @@
   /* Calendar grid */
   .calendar{background:var(--panel);border:1px solid var(--line);border-radius:12px;
     overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.03);}
-  .dow{display:grid;grid-template-columns:repeat(7,1fr);background:#fafbfc;border-bottom:1px solid var(--line);}
+  .dow{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));background:#fafbfc;border-bottom:1px solid var(--line);}
   .dow div{padding:10px 12px;font-size:12px;font-weight:600;color:var(--muted);
-    text-transform:uppercase;letter-spacing:.6px;text-align:left;border-right:1px solid var(--line);}
+    text-transform:uppercase;letter-spacing:.6px;text-align:left;border-right:1px solid var(--line);min-width:0;overflow:hidden;}
   .dow div:last-child{border-right:none}
-  .grid{display:grid;grid-template-columns:repeat(7,1fr);grid-auto-rows:minmax(135px,auto);}
+  .grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));grid-auto-rows:minmax(135px,auto);}
   .cell{border-right:1px solid var(--line);border-bottom:1px solid var(--line);
-    padding:8px 8px 10px;min-height:135px;position:relative;background:var(--panel);}
+    padding:8px 8px 10px;min-height:135px;position:relative;background:var(--panel);min-width:0;overflow:hidden;}
   .cell:nth-child(7n){border-right:none}
   .cell.out{background:#fafbfc;color:#aab1bb}
   .cell.today{background:var(--today)}
   .cell.today .daynum{background:var(--today-ring);color:#1f2328;border-radius:999px;
     width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;}
   .daynum{font-size:12px;font-weight:600;color:#374151;display:inline-block;margin-bottom:6px;}
-  .events{display:flex;flex-direction:column;gap:3px}
+  .events{display:flex;flex-direction:column;gap:3px;min-width:0}
   .event{
     background:var(--t-other);color:var(--t-other-ink);
     border-left:3px solid var(--accent);
     padding:3px 6px;font-size:11.5px;line-height:1.25;border-radius:4px;
-    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:default;
+    cursor:pointer;min-width:0;max-width:100%;overflow:hidden;
+    word-break:break-word;
+  }
+  .event .title{
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+    overflow:hidden;text-overflow:ellipsis;
   }
   .event small{display:block;color:#5a4ab0;font-size:10px;margin-top:1px;font-weight:600;
-    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;}
   .event.t-email{background:var(--t-email);color:var(--t-email-ink);border-left-color:#1e40af}
   .event.t-text{background:var(--t-text);color:var(--t-text-ink);border-left-color:#15803d}
   .event.t-dm{background:var(--t-dm);color:var(--t-dm-ink);border-left-color:#b91c1c}
@@ -424,7 +429,10 @@
       (byDay[key] || []).forEach(function(ev){
         var el = document.createElement("div");
         el.className = "event " + typeClass(ev.type) + (ev.premium_on ? " premium" : "");
-        el.textContent = ev.title;
+        var titleSpan = document.createElement("span");
+        titleSpan.className = "title";
+        titleSpan.textContent = ev.title;
+        el.appendChild(titleSpan);
         var meta = [];
         if(ev.type) meta.push(ev.type);
         if(ev.job)  meta.push("Job " + ev.job);
@@ -492,14 +500,22 @@
     modal.classList.remove("open");
     modal.setAttribute("aria-hidden", "true");
   }
-  document.addEventListener("DOMContentLoaded", function(){
+  function _bindModal(){
     var modal = document.getElementById("eventModal");
-    document.getElementById("emClose").addEventListener("click", closeEventModal);
+    if(!modal || modal.dataset.bound === "1") return;
+    modal.dataset.bound = "1";
+    var closer = document.getElementById("emClose");
+    if(closer) closer.addEventListener("click", closeEventModal);
     modal.addEventListener("click", function(e){ if(e.target === modal) closeEventModal(); });
     document.addEventListener("keydown", function(e){
       if(e.key === "Escape" && modal.classList.contains("open")) closeEventModal();
     });
-  });
+  }
+  if(document.readyState === "loading"){
+    document.addEventListener("DOMContentLoaded", _bindModal);
+  } else {
+    _bindModal();
+  }
 
   // ---------- render dated list ----------
   function renderList(){
