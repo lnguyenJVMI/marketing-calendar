@@ -7,7 +7,7 @@ on:
       - 'generate_calendar.py'
   workflow_dispatch:
 
-# THIS SECTION FIXES THE NODE.JS 20 WARNING
+# THIS SECTION FORCES NODE.JS 24 AND KILLS THE WARNINGS
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true 
 
@@ -26,5 +26,5 @@ jobs:
         run: python generate_calendar.py --data-dir ".github/datafiles" --output index.html
       - uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "Auto-update calendar"
+          commit_message: "Master Fix: All Columns & Node 24"
           file_pattern: 'index.html'
