@@ -6,6 +6,8 @@ on:
       - '.github/datafiles/**'
       - 'generate_calendar.py'
   workflow_dispatch:
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # Force Node.js 24 to fix warnings
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -21,5 +23,5 @@ jobs:
         run: python generate_calendar.py --data-dir ".github/datafiles" --output index.html
       - uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "Auto-update calendar"
+          commit_message: "Auto-update calendar (Polished Version)"
           file_pattern: 'index.html'
