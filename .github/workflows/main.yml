@@ -3,8 +3,8 @@ on:
   push:
     branches: [ main ]
     paths:
-      - 'asana_tasks.csv'
-      - 'communications_calendar.xlsx'
+      - '**.xlsx'
+      - 'generate_calendar.py'
   workflow_dispatch:
 jobs:
   build:
@@ -17,12 +17,13 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install pandas openpyxl
-      - run: |
+      - name: Generate Calendar
+        run: |
+          # This command now looks for your specific Excel file
           python generate_calendar.py \
-            --asana-csv asana_tasks.csv \
-            --communications-xlsx communications_calendar.xlsx \
+            --xlsx "CommunicationsCalendar2026(1).xlsx" \
             --output index.html
       - uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "Auto-update calendar"
+          commit_message: "Auto-update calendar from Excel"
           file_pattern: 'index.html'
