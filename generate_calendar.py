@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
-Jewish Voice Marketing Calendar Generator - Final Robust Version.
-Extracts actual URLs from Excel cells and handles auto-discovery of latest files.
+Jewish Voice Marketing Calendar Generator - Polished Version.
+- Fixes Vanity Links (extracts actual URLs)
+- Increases font size for Producer/Audience
+- Makes Taping Dates interactive (scroll to broadcast)
+- Handles auto-discovery of latest files
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ import openpyxl
 
 @dataclass
 class CalendarItem:
+    id: str
     title: str
     date: str
     source: str
@@ -75,49 +79,9 @@ def parse_date(value: object) -> str:
         return parsed.strftime("%Y-%m-%d")
     return text
 
-def process_dataframe(df: pd.DataFrame, source_name: str) -> list[CalendarItem]:
-    items = []
-    cols = df.columns
-    c_desc = find_col_idx(cols, "Description") or find_col_idx(cols, "Name of Communication") or find_col_idx(cols, "Title") or find_col_idx(cols, "Task Name")
-    c_date = find_col_idx(cols, "Target Date") or find_col_idx(cols, "Air Date") or find_col_idx(cols, "Due Date") or find_col_idx(cols, "Date")
-    c_type = find_col_idx(cols, "Type") or find_col_idx(cols, "Category") or find_col_idx(cols, "Section")
-    c_prod = find_col_idx(cols, "Producer") or find_col_idx(cols, "Owner") or find_col_idx(cols, "Assignee")
-    c_aud = find_col_idx(cols, "Audience")
-    c_link = find_col_idx(cols, "Vanity Link") or find_col_idx(cols, "Ops Database for Offer Codes") or find_col_idx(cols, "Vanity linl") or find_col_idx(cols, "Link")
-    c_job = find_col_idx(cols, "BBS Job Number") or find_col_idx(headers, "Job Number")
-    c_prem = find_col_idx(cols, "Premium")
-    c_art = find_col_idx(cols, "BBS Final Art") or find_col_idx(headers, "Final Art")
-    c_seg = find_col_idx(cols, "Segment Code")
-    c_notes = find_col_idx(cols, "Notes") or find_col_idx(headers, "Subject")
-
-    if c_desc is None:
-        return items
-
-    for _, row in df.iterrows():
-        title = normalized(row.iloc[c_desc])
-        if not title: continue
-        
-        date = parse_date(row.iloc[c_date]) if c_date is not None else ""
-        category = normalized(row.iloc[c_type]) if c_type is not None else "General"
-        
-        if "broadcast" in (title + " " + category).lower() or "tv" in (title + " " + category).lower():
-            category = "Broadcast/TV"
-
-        items.append(CalendarItem(
-            title=title, date=date, source=source_name, category=category,
-            owner=normalized(row.iloc[c_prod]) if c_prod is not None else "",
-            audience=normalized(row.iloc[c_aud]) if c_aud is not None else "",
-            link=normalized(row.iloc[c_link]) if c_link is not None else "",
-            notes=normalized(row.iloc[c_notes]) if c_notes is not None else "",
-            job_number=normalized(row.iloc[c_job]) if c_job is not None else "",
-            premium=normalized(row.iloc[c_prem]) if c_prem is not None else "",
-            final_art=normalized(row.iloc[c_art]) if c_art is not None else "",
-            segment_code=normalized(row.iloc[c_seg]) if c_seg is not None else "",
-        ))
-    return items
-
 def extract_excel_with_links(path: Path) -> list[CalendarItem]:
     items = []
+    # Load with data_only=False to get hyperlinks
     wb = openpyxl.load_workbook(path, data_only=False)
     
     for sheet_name in wb.sheetnames:
@@ -153,12 +117,19 @@ def extract_excel_with_links(path: Path) -> list[CalendarItem]:
             link_url = ""
             if c_link is not None:
                 cell = row_vals[c_link]
+                # Check for explicit hyperlink object
                 if cell.hyperlink:
                     link_url = cell.hyperlink.target
                 else:
-                    val = normalized(cell.value)
+                    # Check if the value itself is a URL or a HYPERLINK formula
+                    val = str(cell.value) if cell.value else ""
                     if val.startswith("http"):
                         link_url = val
+                    elif "HYPERLINK" in val:
+                        # Extract URL from formula like =HYPERLINK("url", "text")
+                        match = re.search(r'HYPERLINK\("([^"]+)"', val)
+                        if match:
+                            link_url = match.group(1)
 
             date = parse_date(row_vals[c_date].value) if c_date is not None else ""
             category = normalized(row_vals[c_type].value) if c_type is not None else "General"
@@ -166,7 +137,9 @@ def extract_excel_with_links(path: Path) -> list[CalendarItem]:
             if "broadcast" in (title + " " + category).lower() or "tv" in (title + " " + category).lower():
                 category = "Broadcast/TV"
 
+            item_id = f"item-{sheet_name}-{r_idx}"
             items.append(CalendarItem(
+                id=item_id,
                 title=title, date=date, source=f"Excel ({path.name})", category=category,
                 owner=normalized(row_vals[c_prod].value) if c_prod is not None else "",
                 audience=normalized(row_vals[c_aud].value) if c_aud is not None else "",
@@ -200,10 +173,11 @@ def load_latest_from_folder(folder_path: Path) -> tuple[list[CalendarItem], list
                 if "taping" in sheet.lower():
                     df = xl.parse(sheet)
                     for col in df.columns:
-                        if any(m in str(col).lower() for m in ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]):
-                            all_tapings.append(TapingDate(title="Taping Session", date=str(col)))
+                        col_str = str(col)
+                        if any(m in col_str.lower() for m in ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]):
+                            all_tapings.append(TapingDate(title="Taping Session", date=parse_date(col_str)))
                         for val in df[col].dropna():
-                            all_tapings.append(TapingDate(title="Taping Session", date=str(val)))
+                            all_tapings.append(TapingDate(title="Taping Session", date=parse_date(val)))
         except: pass
 
     if csv_files:
@@ -211,7 +185,18 @@ def load_latest_from_folder(folder_path: Path) -> tuple[list[CalendarItem], list
         print(f"Processing Latest CSV: {latest_csv.name}")
         try:
             df_csv = pd.read_csv(latest_csv)
-            all_items.extend(process_dataframe(df_csv, f"CSV ({latest_csv.name})"))
+            cols = df_csv.columns
+            c_desc = find_col_idx(cols, "Description") or find_col_idx(cols, "Task Name")
+            c_date = find_col_idx(cols, "Target Date") or find_col_idx(cols, "Due Date")
+            if c_desc is not None:
+                for idx, row in df_csv.iterrows():
+                    title = normalized(row.iloc[c_desc])
+                    if title:
+                        all_items.append(CalendarItem(
+                            id=f"csv-{idx}",
+                            title=title, date=parse_date(row.iloc[c_date]) if c_date is not None else "",
+                            source=f"CSV ({latest_csv.name})", category="General"
+                        ))
         except Exception as e:
             print(f"Error reading CSV: {e}")
             
@@ -222,11 +207,14 @@ def generate_html(items: list[CalendarItem], tapings: list[TapingDate], title: s
     items_sorted = sorted([i for i in items if i.date], key=lambda x: x.date)
     undated = [i for i in items if not i.date]
     broadcast = [i for i in items_sorted if i.category == "Broadcast/TV"]
+    
+    # Sort tapings by date
+    tapings_sorted = sorted([t for t in tapings if t.date], key=lambda x: x.date)
 
     payload = {
         "items": [asdict(i) for i in items_sorted + undated],
         "broadcast": [asdict(i) for i in broadcast],
-        "tapings": [asdict(t) for t in tapings],
+        "tapings": [asdict(t) for t in tapings_sorted],
         "today": today,
     }
     
@@ -240,7 +228,7 @@ def generate_html(items: list[CalendarItem], tapings: list[TapingDate], title: s
 <title>{html.escape(title)}</title>
 <style>
 :root {{ --bg:#f1f5f9; --panel:#ffffff; --ink:#1e293b; --muted:#64748b; --line:#cbd5e1; --blue:#0284c7; --green:#059669; --amber:#d97706; --jv-blue: #1e3a8a; }}
-body {{ margin:0; background:var(--bg); color:var(--ink); font-family: 'Inter', system-ui, -apple-system, sans-serif; line-height: 1.5; }}
+body {{ margin:0; background:var(--bg); color:var(--ink); font-family: 'Inter', system-ui, -apple-system, sans-serif; line-height: 1.5; scroll-behavior: smooth; }}
 header {{ padding: 20px 40px; background: var(--jv-blue); color:#fff; display: flex; justify-content: space-between; align-items: center; }}
 header h1 {{ margin:0; font-size: 22px; font-weight: 700; letter-spacing: -0.025em; }}
 .last-updated {{ font-size: 12px; opacity: 0.8; }}
@@ -266,12 +254,15 @@ tr:hover td {{ background: #f8fafc; }}
 .detail-item {{ font-size: 11px; color: var(--muted); }}
 .detail-label {{ font-weight: 700; color: var(--ink); text-transform: uppercase; font-size: 9px; display: block; }}
 .taping-list {{ display:flex; flex-wrap:wrap; gap:10px; }}
-.taping {{ background:#fff7ed; border:1px solid #fed7aa; color:#9a3412; padding:8px 16px; border-radius:12px; font-size:14px; font-weight:600; }}
+.taping {{ background:#fff7ed; border:1px solid #fed7aa; color:#9a3412; padding:8px 16px; border-radius:12px; font-size:14px; font-weight:700; cursor:pointer; transition: all 0.2s; }}
+.taping:hover {{ background: #ffedd5; transform: translateY(-2px); }}
 .timeline-item {{ border-left: 3px solid var(--blue); padding: 0 0 32px 24px; position:relative; }}
 .timeline-item::before {{ content:""; position:absolute; left:-9px; top:0; width:15px; height:15px; border-radius:50%; background:#fff; border: 3px solid var(--blue); }}
 .timeline-date {{ font-weight:800; color:var(--blue); font-size:14px; margin-bottom:8px; }}
 .timeline-content {{ background: #fff; border: 1px solid var(--line); padding: 20px; border-radius: 12px; }}
 .timeline-title {{ font-size:18px; font-weight:700; margin-bottom:8px; color: var(--jv-blue); }}
+.producer-text {{ font-size: 16px; font-weight: 700; color: var(--ink); }}
+.audience-text {{ font-size: 13px; color: var(--muted); }}
 </style>
 </head>
 <body>
@@ -281,8 +272,8 @@ tr:hover td {{ background: #f8fafc; }}
 </header>
 <main>
     <div class="tabs">
-        <button class="tab active" onclick="showTab('calendar')">Marketing Calendar</button>
-        <button class="tab" onclick="showTab('broadcast')">Broadcast Schedule</button>
+        <button class="tab active" id="tab-calendar" onclick="showTab('calendar')">Marketing Calendar</button>
+        <button class="tab" id="tab-broadcast" onclick="showTab('broadcast')">Broadcast Schedule</button>
     </div>
 
     <div id="calendar" class="panel active">
@@ -298,7 +289,7 @@ tr:hover td {{ background: #f8fafc; }}
                         <th style="width: 100px">Date</th>
                         <th>Communication Details</th>
                         <th style="width: 120px">Type</th>
-                        <th style="width: 150px">Producer / Audience</th>
+                        <th style="width: 180px">Producer / Audience</th>
                         <th style="width: 150px">Links & Assets</th>
                     </tr>
                 </thead>
@@ -310,6 +301,7 @@ tr:hover td {{ background: #f8fafc; }}
     <div id="broadcast" class="panel">
         <div class="card">
             <h2 style="margin-top:0; font-size: 18px;">Upcoming Taping Sessions</h2>
+            <p style="font-size: 12px; color: var(--muted); margin-bottom: 16px;">Click a date to jump to the broadcast details.</p>
             <div id="tapingList" class="taping-list"></div>
         </div>
         <div class="timeline" id="timeline"></div>
@@ -323,7 +315,19 @@ function showTab(id) {{
     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.getElementById(id).classList.add('active');
-    event.currentTarget.classList.add('active');
+    document.getElementById('tab-' + id).classList.add('active');
+}}
+
+function jumpToDate(date) {{
+    showTab('broadcast');
+    setTimeout(() => {{
+        const element = document.querySelector(`[data-date="${{date}}"]`);
+        if (element) {{
+            element.scrollIntoView({{ behavior: 'smooth', block: 'center' }});
+            element.style.backgroundColor = '#fef3c7';
+            setTimeout(() => element.style.backgroundColor = '', 2000);
+        }}
+    }}, 100);
 }}
 
 function render() {{
@@ -355,8 +359,8 @@ function render() {{
             </td>
             <td><span class="chip ${{i.category === 'Broadcast/TV' ? 'broadcast' : ''}}">${{i.category}}</span></td>
             <td>
-                <div style="font-weight: 600;">${{i.owner}}</div>
-                <div style="font-size: 11px; color: var(--muted);">${{i.audience}}</div>
+                <div class="producer-text">${{i.owner}}</div>
+                <div class="audience-text">${{i.audience}}</div>
             </td>
             <td>
                 ${{i.link ? `<a href="${{i.link}}" class="link-btn" target="_blank">🔗 Vanity Link</a>` : `<span style="color: #cbd5e1; font-size: 11px;">No link provided</span>`}}
@@ -373,18 +377,18 @@ function init() {{
     document.getElementById('producerFilter').innerHTML += producers.map(p => `<option value="${{p}}">${{p}}</option>`).join('');
 
     document.getElementById('tapingList').innerHTML = DATA.tapings.map(t => `
-        <div class="taping">${{t.date}}</div>
+        <div class="taping" onclick="jumpToDate('${{t.date}}')">${{t.date}}</div>
     `).join('');
 
     document.getElementById('timeline').innerHTML = DATA.broadcast.map(i => `
-        <div class="timeline-item">
+        <div class="timeline-item" data-date="${{i.date}}">
             <div class="timeline-date">${{i.date}}</div>
             <div class="timeline-content">
                 <div class="timeline-title">${{i.title}}</div>
                 <div style="margin-bottom: 12px; color: var(--muted);">${{i.notes}}</div>
                 <div class="detail-grid" style="margin-bottom: 16px;">
-                    <div class="detail-item"><span class="detail-label">Producer</span>${{i.owner}}</div>
-                    <div class="detail-item"><span class="detail-label">Audience</span>${{i.audience}}</div>
+                    <div class="detail-item"><span class="detail-label">Producer</span><span class="producer-text" style="font-size:14px">${{i.owner}}</span></div>
+                    <div class="detail-item"><span class="detail-label">Audience</span><span class="audience-text">${{i.audience}}</span></div>
                     ${{i.job_number ? `<div class="detail-item"><span class="detail-label">Job #</span>${{i.job_number}}</div>` : ''}}
                     ${{i.premium ? `<div class="detail-item"><span class="detail-label">Premium</span>${{i.premium}}</div>` : ''}}
                     ${{i.segment_code ? `<div class="detail-item"><span class="detail-label">Segment</span>${{i.segment_code}}</div>` : ''}}
