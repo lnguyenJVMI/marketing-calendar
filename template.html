@@ -74,13 +74,13 @@
                 <table>
                     <thead>
                         <tr>
-                            <th style="width: 100px;">Date</th>
-                            <th>Details</th>
-                            <th style="width: 100px;">Job #</th>
-                            <th style="width: 150px;">Premium</th>
-                            <th style="width: 100px;">Type</th>
-                            <th>Producer/Audience</th>
-                            <th style="width: 80px;">Link</th>
+                            <th style="width:100px;">Date</th>
+                            <th>Communication</th>
+                            <th style="width:100px;">Job #</th>
+                            <th style="width:180px;">Premium</th>
+                            <th style="width:100px;">Type</th>
+                            <th style="width:180px;">Producer/Audience</th>
+                            <th style="width:80px;">Link</th>
                         </tr>
                     </thead>
                     <tbody id="tbody"></tbody>
@@ -94,34 +94,41 @@
     </main>
 
     <script>
-        const DATA = __PAYLOAD_PLACEHOLDER__;
+        var DATA = __PAYLOAD_PLACEHOLDER__;
         document.getElementById('update-date').innerText = DATA.updated;
         
         function showTab(id, event) {
-            document.querySelectorAll(".panel").forEach(function(p) { p.classList.remove('active'); });
-            document.querySelectorAll(".nav-btn").forEach(function(b) { b.classList.remove('active'); });
+            var panels = document.querySelectorAll(".panel");
+            var btns = document.querySelectorAll(".nav-btn");
+            for (var p = 0; p < panels.length; p++) { panels[p].classList.remove('active'); }
+            for (var b = 0; b < btns.length; b++) { btns[b].classList.remove('active'); }
             document.getElementById(id).classList.add('active');
-            if(event && event.currentTarget) event.currentTarget.classList.add('active');
+            if (event && event.currentTarget) event.currentTarget.classList.add('active');
         }
 
         function jump(date) {
-            var btns = document.querySelectorAll('.nav-btn');
-            document.querySelectorAll(".panel").forEach(function(p) { p.classList.remove('active'); });
-            document.querySelectorAll(".nav-btn").forEach(function(b) { b.classList.remove('active'); });
+            var panels = document.querySelectorAll(".panel");
+            var btns = document.querySelectorAll(".nav-btn");
+            for (var p = 0; p < panels.length; p++) { panels[p].classList.remove('active'); }
+            for (var b = 0; b < btns.length; b++) { btns[b].classList.remove('active'); }
             document.getElementById('bc').classList.add('active');
             btns[1].classList.add('active');
             setTimeout(function() {
                 var el = document.querySelector('[data-date="' + date + '"]');
-                if(el) el.scrollIntoView({behavior:'smooth', block:'center'});
+                if (el) el.scrollIntoView({behavior:'smooth', block:'center'});
             }, 100);
         }
 
         function render() {
             var s = document.getElementById('search').value.toLowerCase();
-            var filtered = DATA.items.filter(function(i) {
-                var content = (i.title || '') + (i.notes || '') + (i.job_number || '') + (i.premium || '') + (i.owner || '') + (i.audience || '');
-                return content.toLowerCase().indexOf(s) !== -1;
-            });
+            var filtered = [];
+            for (var f = 0; f < DATA.items.length; f++) {
+                var item = DATA.items[f];
+                var content = (item.title || '') + (item.notes || '') + (item.job_number || '') + (item.premium || '') + (item.owner || '') + (item.audience || '');
+                if (content.toLowerCase().indexOf(s) !== -1) {
+                    filtered.push(item);
+                }
+            }
             
             var html = '';
             for (var k = 0; k < filtered.length; k++) {
@@ -129,14 +136,16 @@
                 var dateStr = i.date || 'Undated';
                 html += '<tr>';
                 html += '<td style="font-weight:bold; color:var(--jv-blue); white-space:nowrap;">' + dateStr + '</td>';
-                html += '<td><div style="font-weight:bold; font-size:15px; color:var(--ink);">' + i.title + '</div>';
-                if (i.notes) html += '<div style="color:var(--muted); font-size:12px; margin-top:4px;">' + i.notes + '</div>';
-                html += '</td>';
+                html += '<td style="font-weight:bold; font-size:14px;">' + i.title + '</td>';
                 html += '<td class="job-cell">' + (i.job_number || '') + '</td>';
                 html += '<td class="premium-cell">' + (i.premium || '') + '</td>';
                 html += '<td><span style="font-size:10px; font-weight:bold; padding:3px 8px; border-radius:10px; background:#e2e8f0; color:var(--jv-blue);">' + i.category + '</span></td>';
                 html += '<td><div style="font-weight:bold; color:var(--ink);">' + i.owner + '</div><div style="font-size:12px; color:var(--muted);">' + i.audience + '</div></td>';
-                html += '<td>' + (i.link ? '<a href="' + i.link + '" class="link-btn" target="_blank">Open</a>' : '') + '</td>';
+                if (i.link) {
+                    html += '<td><a href="' + i.link + '" class="link-btn" target="_blank">Open</a></td>';
+                } else {
+                    html += '<td></td>';
+                }
                 html += '</tr>';
             }
             document.getElementById('tbody').innerHTML = html;
@@ -157,13 +166,13 @@
             timelineHtml += '<div style="font-weight:bold; color:var(--blue); font-size:16px; margin-bottom:8px;">' + item.date + '</div>';
             timelineHtml += '<div class="card">';
             timelineHtml += '<div style="font-size:20px; font-weight:bold; color:var(--jv-blue);">' + item.title + '</div>';
-            if (item.notes) timelineHtml += '<div style="color:var(--muted); margin:12px 0; line-height:1.5;">' + item.notes + '</div>';
+            if (item.notes) { timelineHtml += '<div style="color:var(--muted); margin:12px 0; line-height:1.5;">' + item.notes + '</div>'; }
             timelineHtml += '<div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin-top:10px;">';
-            timelineHtml += '<div style="font-size:10px; color:var(--muted); background:#f8fafc; padding:6px; border-radius:4px;"><strong style="display:block; font-size:8px; text-transform:uppercase; color:var(--jv-blue);">Job #</strong>' + (item.job_number || 'N/A') + '</div>';
-            timelineHtml += '<div style="font-size:10px; color:var(--muted); background:#f8fafc; padding:6px; border-radius:4px;"><strong style="display:block; font-size:8px; text-transform:uppercase; color:var(--jv-blue);">Premium</strong>' + (item.premium || 'N/A') + '</div>';
-            timelineHtml += '<div style="font-size:10px; color:var(--muted); background:#f8fafc; padding:6px; border-radius:4px;"><strong style="display:block; font-size:8px; text-transform:uppercase; color:var(--jv-blue);">Producer</strong>' + item.owner + '</div>';
+            timelineHtml += '<div style="font-size:11px; color:var(--muted); background:#f8fafc; padding:8px; border-radius:4px;"><strong style="display:block; font-size:9px; text-transform:uppercase; color:var(--jv-blue);">Job #</strong>' + (item.job_number || 'N/A') + '</div>';
+            timelineHtml += '<div style="font-size:11px; color:var(--muted); background:#f8fafc; padding:8px; border-radius:4px;"><strong style="display:block; font-size:9px; text-transform:uppercase; color:var(--jv-blue);">Premium</strong>' + (item.premium || 'N/A') + '</div>';
+            timelineHtml += '<div style="font-size:11px; color:var(--muted); background:#f8fafc; padding:8px; border-radius:4px;"><strong style="display:block; font-size:9px; text-transform:uppercase; color:var(--jv-blue);">Producer</strong>' + item.owner + '</div>';
             timelineHtml += '</div>';
-            if (item.link) timelineHtml += '<div style="margin-top:20px;"><a href="' + item.link + '" class="link-btn" target="_blank" style="padding:10px 20px;">Open Link</a></div>';
+            if (item.link) { timelineHtml += '<div style="margin-top:15px;"><a href="' + item.link + '" class="link-btn" target="_blank" style="padding:10px 20px;">Open Link</a></div>'; }
             timelineHtml += '</div></div>';
         }
         document.getElementById('timeline').innerHTML = timelineHtml;
