@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Jewish Voice Marketing Calendar Generator - Exact Column Matching Version.
-Matches: Description, Target Date, Producer, Type, Audience, BBS Job Number, Vanity Link, Premium, BBS Final Art, Segment Code.
+Jewish Voice Marketing Calendar Generator - Smart Flexible Version.
+Handles extra spaces, capitalization, and typos in column names.
 """
 
 from __future__ import annotations
@@ -50,6 +50,17 @@ def normalized(value: object) -> str:
         return f"{value}"
     return val
 
+def normalize_col(column: object) -> str:
+    # Remove all non-alphanumeric characters and lowercase for matching
+    return re.sub(r"[^a-z0-9]", "", str(column).lower())
+
+def find_col(df_cols: Iterable[str], target: str) -> Optional[str]:
+    target_norm = normalize_col(target)
+    for col in df_cols:
+        if normalize_col(col) == target_norm:
+            return col
+    return None
+
 def parse_date(value: object) -> str:
     if value is None or pd.isna(value):
         return ""
@@ -82,21 +93,31 @@ def load_calendar_data(path: Path) -> tuple[list[CalendarItem], list[TapingDate]
                     tapings.append(TapingDate(title="Taping Session", date=str(val)))
             continue
 
-        # Exact column mapping based on user input
+        # Smart column mapping
+        cols = df.columns
+        c_desc = find_col(cols, "Description") or find_col(cols, "Name of Communication") or find_col(cols, "Title")
+        c_date = find_col(cols, "Target Date") or find_col(cols, "Air Date") or find_col(cols, "Date")
+        c_type = find_col(cols, "Type") or find_col(cols, "Category")
+        c_prod = find_col(cols, "Producer") or find_col(cols, "Owner")
+        c_aud = find_col(cols, "Audience")
+        c_link = find_col(cols, "Vanity Link") or find_col(cols, "Ops Database for Offer Codes") or find_col(cols, "Vanity linl")
+        c_job = find_col(cols, "BBS Job Number") or find_col(cols, "Job Number")
+        c_prem = find_col(cols, "Premium")
+        c_art = find_col(cols, "BBS Final Art") or find_col(cols, "Final Art")
+        c_seg = find_col(cols, "Segment Code")
+        c_notes = find_col(cols, "Notes") or find_col(cols, "Subject")
+
+        if not c_desc:
+            continue
+
         for _, row in df.iterrows():
-            # We use .get() with exact names provided by the user
-            title = normalized(row.get("Description"))
-            if not title:
-                # Fallback to other common title names if 'Description' is missing
-                title = normalized(row.get("Name of Communication")) or normalized(row.get("Title"))
-            
+            title = normalized(row.get(c_desc))
             if not title:
                 continue
                 
-            date = parse_date(row.get("Target Date"))
-            category = normalized(row.get("Type")) or "General"
+            date = parse_date(row.get(c_date)) if c_date else ""
+            category = normalized(row.get(c_type)) if c_type else "General"
             
-            # Auto-classify as Broadcast if keywords found
             if "broadcast" in (title + " " + category).lower() or "tv" in (title + " " + category).lower():
                 category = "Broadcast/TV"
 
@@ -105,14 +126,14 @@ def load_calendar_data(path: Path) -> tuple[list[CalendarItem], list[TapingDate]
                 date=date,
                 source="Communications Calendar",
                 category=category,
-                owner=normalized(row.get("Producer")),
-                audience=normalized(row.get("Audience")),
-                link=normalized(row.get("Vanity Link")) or normalized(row.get("Ops Database for Offer Codes")),
-                notes=normalized(row.get("Notes")) or normalized(row.get("Subject")),
-                job_number=normalized(row.get("BBS Job Number")),
-                premium=normalized(row.get("Premium")),
-                final_art=normalized(row.get("BBS Final Art")),
-                segment_code=normalized(row.get("Segment Code")),
+                owner=normalized(row.get(c_prod)) if c_prod else "",
+                audience=normalized(row.get(c_aud)) if c_aud else "",
+                link=normalized(row.get(c_link)) if c_link else "",
+                notes=normalized(row.get(c_notes)) if c_notes else "",
+                job_number=normalized(row.get(c_job)) if c_job else "",
+                premium=normalized(row.get(c_prem)) if c_prem else "",
+                final_art=normalized(row.get(c_art)) if c_art else "",
+                segment_code=normalized(row.get(c_seg)) if c_seg else "",
             ))
             
     return items, tapings
