@@ -1,0 +1,45 @@
+name: Update Marketing Calendar
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'data/**'
+      - 'generate_calendar.py'
+  workflow_dispatch: # Allows you to run it manually from the "Actions" tab
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas openpyxl
+
+      - name: Generate Calendar
+        run: |
+          # We assume your data files are in a folder named 'data'
+          # If you rename them, update the filenames below
+          python generate_calendar.py \
+            --asana-csv data/asana_tasks.csv \
+            --communications-xlsx data/communications_calendar.xlsx \
+            --output index.html \
+            --title "Marketing Calendar"
+
+      - name: Commit and Push changes
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Auto-update calendar from new data"
+          file_pattern: 'index.html'
