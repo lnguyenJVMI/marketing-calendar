@@ -1,21 +1,7 @@
 #!/usr/bin/env python3
 """
-Free / low-cost standalone marketing calendar generator.
-
-This script produces a single HTML file with two tabs:
-1. Marketing Calendar: all dated Asana/communications items, with filters and a task table.
-2. Broadcast Schedule: TV/broadcast items grouped by month, plus optional taping dates.
-
-Expected inputs are intentionally flexible:
-- Asana CSV export: columns such as Name, Task Name, Due Date, Assignee, Section, Project, Notes, Completed.
-- Communications Excel workbook: one or more sheets with Date/Air Date/Start Date and Title/Name/Description columns.
-- Optional Tapings sheet: date ranges or start/end dates are highlighted in the Broadcast tab.
-
-Usage:
-    python3 generate_calendar.py \
-      --asana-csv asana_tasks.csv \
-      --communications-xlsx communications_calendar.xlsx \
-      --output marketing-calendar-standalone.html
+Updated Marketing Calendar Generator for Jewish Voice.
+Includes support for Vanity Links, Producers, Audiences, and specific sheet structures.
 """
 
 from __future__ import annotations
@@ -31,23 +17,16 @@ from typing import Iterable, Optional
 
 import pandas as pd
 
+# Column detection candidates
+DATE_CANDIDATES = ["target date", "air date", "date", "start date", "publish date"]
+TITLE_CANDIDATES = ["description", "name of communication", "title", "task name"]
+TYPE_CANDIDATES = ["type", "category", "channel"]
+OWNER_CANDIDATES = ["producer", "assignee", "owner", "lead"]
+LINK_CANDIDATES = ["vanity link", "link", "url"]
+AUDIENCE_CANDIDATES = ["audience"]
+NOTES_CANDIDATES = ["notes", "subject"]
 
-DATE_CANDIDATES = [
-    "due date", "date", "air date", "start date", "publish date", "send date",
-    "event date", "scheduled date", "deadline"
-]
-TITLE_CANDIDATES = [
-    "name", "task name", "title", "subject", "episode", "show", "description", "item"
-]
-TYPE_CANDIDATES = ["type", "category", "channel", "section", "project", "medium"]
-OWNER_CANDIDATES = ["assignee", "owner", "lead", "responsible", "assigned to"]
-STATUS_CANDIDATES = ["status", "completed", "progress"]
-NOTES_CANDIDATES = ["notes", "description", "details", "summary"]
-
-BROADCAST_KEYWORDS = [
-    "broadcast", "tv", "television", "show", "episode", "air", "aired", "taping", "tapings"
-]
-
+BROADCAST_KEYWORDS = ["broadcast", "tv", "television", "show", "episode", "air", "aired"]
 
 @dataclass
 class CalendarItem:
@@ -56,10 +35,10 @@ class CalendarItem:
     source: str
     category: str = "General"
     owner: str = ""
-    status: str = ""
+    audience: str = ""
+    link: str = ""
     notes: str = ""
     sheet: str = ""
-
 
 @dataclass
 class TapingDate:
@@ -67,16 +46,13 @@ class TapingDate:
     date: str
     notes: str = ""
 
-
 def normalized(value: object) -> str:
     if value is None or pd.isna(value):
         return ""
     return str(value).strip()
 
-
 def normalize_col(column: object) -> str:
     return re.sub(r"\s+", " ", str(column).strip().lower())
-
 
 def find_column(columns: Iterable[object], candidates: list[str]) -> Optional[object]:
     lookup = {normalize_col(c): c for c in columns}
@@ -88,7 +64,6 @@ def find_column(columns: Iterable[object], candidates: list[str]) -> Optional[ob
         if any(candidate in ncol for candidate in candidates):
             return col
     return None
-
 
 def parse_date(value: object) -> str:
     if value is None or pd.isna(value):
@@ -103,302 +78,238 @@ def parse_date(value: object) -> str:
         return parsed.strftime("%Y-%m-%d")
     return text
 
-
-def classify_category(row: pd.Series, explicit: str, source: str, sheet: str) -> str:
-    combined = " ".join(normalized(v).lower() for v in row.values)
-    if explicit:
-        return explicit
-    if any(keyword in combined for keyword in BROADCAST_KEYWORDS) or any(keyword in sheet.lower() for keyword in BROADCAST_KEYWORDS):
-        return "Broadcast/TV"
-    if "email" in combined:
-        return "Email"
-    if "social" in combined:
-        return "Social"
-    if "asana" in source.lower():
-        return "Asana Task"
-    return "Communications"
-
-
-def load_tabular_file(path: Path, source: str, sheet: str = "") -> list[CalendarItem]:
-    if not path.exists():
-        return []
-
-    if path.suffix.lower() in {".xlsx", ".xls"}:
-        frames = pd.read_excel(path, sheet_name=None)
-    else:
-        frames = {sheet or path.stem: pd.read_csv(path)}
-
+def load_calendar_data(path: Path) -> tuple[list[CalendarItem], list[TapingDate]]:
     items: list[CalendarItem] = []
-    for sheet_name, df in frames.items():
-        if df.empty:
+    tapings: list[TapingDate] = []
+    
+    if not path.exists():
+        return items, tapings
+
+    xl = pd.ExcelFile(path)
+    for sheet_name in xl.sheet_names:
+        df = xl.parse(sheet_name)
+        df = df.dropna(axis=1, how="all")
+        
+        if "taping" in sheet_name.lower():
+            # Handle the specific "Tapings" sheet structure seen in the sample
+            # It seems to have dates as values in the first column
+            for col in df.columns:
+                if any(m in str(col).lower() for m in ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]):
+                    tapings.append(TapingDate(title="Taping Session", date=str(col)))
+                for val in df[col].dropna():
+                    tapings.append(TapingDate(title="Taping Session", date=str(val)))
             continue
-        df = df.dropna(how="all")
+
         date_col = find_column(df.columns, DATE_CANDIDATES)
         title_col = find_column(df.columns, TITLE_CANDIDATES)
         type_col = find_column(df.columns, TYPE_CANDIDATES)
         owner_col = find_column(df.columns, OWNER_CANDIDATES)
-        status_col = find_column(df.columns, STATUS_CANDIDATES)
+        link_col = find_column(df.columns, LINK_CANDIDATES)
+        audience_col = find_column(df.columns, AUDIENCE_CANDIDATES)
         notes_col = find_column(df.columns, NOTES_CANDIDATES)
 
-        if not date_col or not title_col:
+        if not title_col:
             continue
 
         for _, row in df.iterrows():
-            date = parse_date(row.get(date_col))
             title = normalized(row.get(title_col))
-            if not date or not title:
+            if not title:
                 continue
-            explicit_category = normalized(row.get(type_col)) if type_col else ""
-            category = classify_category(row, explicit_category, source, str(sheet_name))
+                
+            date = parse_date(row.get(date_col)) if date_col else ""
+            category = normalized(row.get(type_col)) if type_col else "General"
+            
+            # Auto-classify as Broadcast if keywords found
+            if any(k in (title + " " + category).lower() for k in BROADCAST_KEYWORDS):
+                category = "Broadcast/TV"
+
             items.append(CalendarItem(
                 title=title,
                 date=date,
-                source=source,
+                source="Communications Calendar",
                 category=category,
                 owner=normalized(row.get(owner_col)) if owner_col else "",
-                status=normalized(row.get(status_col)) if status_col else "",
+                audience=normalized(row.get(audience_col)) if audience_col else "",
+                link=normalized(row.get(link_col)) if link_col else "",
                 notes=normalized(row.get(notes_col)) if notes_col else "",
-                sheet=str(sheet_name),
+                sheet=sheet_name
             ))
-    return items
-
-
-def extract_tapings(path: Path) -> list[TapingDate]:
-    if not path.exists() or path.suffix.lower() not in {".xlsx", ".xls"}:
-        return []
-    tapings: list[TapingDate] = []
-    frames = pd.read_excel(path, sheet_name=None)
-    for sheet_name, df in frames.items():
-        if "taping" not in str(sheet_name).lower():
-            continue
-        date_col = find_column(df.columns, DATE_CANDIDATES + ["range", "dates"])
-        end_col = find_column(df.columns, ["end date", "finish date"])
-        title_col = find_column(df.columns, TITLE_CANDIDATES)
-        notes_col = find_column(df.columns, NOTES_CANDIDATES)
-        if not date_col:
-            continue
-        for _, row in df.dropna(how="all").iterrows():
-            start = parse_date(row.get(date_col))
-            end = parse_date(row.get(end_col)) if end_col else ""
-            if not start:
-                continue
-            title = normalized(row.get(title_col)) if title_col else "Taping"
-            label = f"{start} – {end}" if end and end != start else start
-            tapings.append(TapingDate(title=title or "Taping", date=label, notes=normalized(row.get(notes_col)) if notes_col else ""))
-    return tapings
-
+            
+    return items, tapings
 
 def generate_html(items: list[CalendarItem], tapings: list[TapingDate], title: str) -> str:
     today = datetime.now().strftime("%Y-%m-%d")
-    items_sorted = sorted(items, key=lambda item: item.date)
-    broadcast = [item for item in items_sorted if item.category.lower() in {"broadcast/tv", "broadcast", "tv"} or any(k in (item.title + " " + item.notes + " " + item.sheet).lower() for k in BROADCAST_KEYWORDS)]
-    upcoming_count = sum(1 for item in broadcast if item.date >= today)
+    items_sorted = sorted([i for i in items if i.date], key=lambda x: x.date)
+    undated = [i for i in items if not i.date]
+    
+    broadcast = [i for i in items_sorted if i.category == "Broadcast/TV"]
+    upcoming_count = sum(1 for i in broadcast if i.date >= today)
 
     payload = {
-        "items": [asdict(item) for item in items_sorted],
-        "broadcast": [asdict(item) for item in broadcast],
-        "tapings": [asdict(taping) for taping in tapings],
+        "items": [asdict(i) for i in items_sorted + undated],
+        "broadcast": [asdict(i) for i in broadcast],
+        "tapings": [asdict(t) for t in tapings],
         "today": today,
         "upcomingCount": upcoming_count,
     }
-    data = json.dumps(payload, ensure_ascii=False)
-    safe_title = html.escape(title)
-
+    
+    data_json = json.dumps(payload, ensure_ascii=False)
+    
     return f"""<!doctype html>
-<html lang=\"en\">
+<html lang="en">
 <head>
-<meta charset=\"utf-8\">
-<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">
-<title>{safe_title}</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{html.escape(title)}</title>
 <style>
-:root {{ --bg:#f6f7fb; --panel:#ffffff; --ink:#172033; --muted:#667085; --line:#e5e7eb; --blue:#2563eb; --green:#16a34a; --amber:#d97706; --purple:#7c3aed; }}
-* {{ box-sizing: border-box; }}
-body {{ margin:0; background:var(--bg); color:var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }}
-header {{ padding: 32px 28px 18px; background: linear-gradient(135deg,#0f172a,#1e40af); color:#fff; }}
-header h1 {{ margin:0 0 8px; font-size: clamp(28px, 4vw, 44px); letter-spacing:-.03em; }}
-header p {{ margin:0; color:#dbeafe; max-width: 900px; }}
-main {{ max-width: 1180px; margin: -8px auto 48px; padding: 0 18px; }}
-.tabs {{ display:flex; gap:10px; margin: 20px 0; flex-wrap:wrap; }}
-.tab {{ border:1px solid var(--line); background:var(--panel); color:var(--ink); padding:12px 16px; border-radius:999px; cursor:pointer; font-weight:700; box-shadow:0 2px 8px rgba(15,23,42,.04); }}
+:root {{ --bg:#f8fafc; --panel:#ffffff; --ink:#0f172a; --muted:#64748b; --line:#e2e8f0; --blue:#2563eb; --green:#10b981; --amber:#f59e0b; }}
+body {{ margin:0; background:var(--bg); color:var(--ink); font-family: system-ui, -apple-system, sans-serif; }}
+header {{ padding: 24px; background: #1e293b; color:#fff; }}
+header h1 {{ margin:0; font-size: 24px; }}
+main {{ max-width: 1200px; margin: 0 auto; padding: 20px; }}
+.tabs {{ display:flex; gap:8px; margin-bottom: 20px; }}
+.tab {{ padding:10px 20px; border-radius:8px; border:1px solid var(--line); background:#fff; cursor:pointer; font-weight:600; }}
 .tab.active {{ background:var(--blue); color:#fff; border-color:var(--blue); }}
-.badge {{ display:inline-block; margin-left:8px; padding:2px 8px; border-radius:999px; background:#eff6ff; color:#1d4ed8; font-size:12px; }}
-.tab.active .badge {{ background:#dbeafe; color:#1e3a8a; }}
 .panel {{ display:none; }}
 .panel.active {{ display:block; }}
-.card {{ background:var(--panel); border:1px solid var(--line); border-radius:18px; padding:18px; box-shadow: 0 10px 28px rgba(15,23,42,.06); margin-bottom:18px; }}
-.controls {{ display:grid; grid-template-columns: repeat(4, minmax(160px,1fr)); gap:12px; }}
-input, select {{ width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:10px; background:#fff; color:var(--ink); }}
-.stats {{ display:grid; grid-template-columns: repeat(4, minmax(140px,1fr)); gap:12px; margin-bottom:18px; }}
-.stat {{ background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:16px; }}
-.stat strong {{ display:block; font-size:28px; }}
-.table-wrap {{ overflow:auto; }}
-table {{ width:100%; border-collapse: collapse; min-width: 840px; }}
-th, td {{ padding:12px; text-align:left; border-bottom:1px solid var(--line); vertical-align:top; }}
-th {{ color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; background:#f8fafc; }}
-.chip {{ display:inline-flex; align-items:center; border-radius:999px; padding:4px 9px; font-size:12px; font-weight:700; background:#eef2ff; color:#3730a3; }}
+.card {{ background:#fff; border:1px solid var(--line); border-radius:12px; padding:20px; margin-bottom:20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
+.controls {{ display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:12px; margin-bottom:20px; }}
+input, select {{ padding:8px 12px; border:1px solid var(--line); border-radius:6px; width:100%; box-sizing:border-box; }}
+table {{ width:100%; border-collapse:collapse; }}
+th, td {{ padding:12px; text-align:left; border-bottom:1px solid var(--line); }}
+th {{ background:#f1f5f9; font-size:12px; text-transform:uppercase; color:var(--muted); }}
+.chip {{ display:inline-block; padding:2px 8px; border-radius:12px; font-size:11px; font-weight:700; background:#f1f5f9; }}
 .chip.broadcast {{ background:#fef3c7; color:#92400e; }}
-.chip.asana {{ background:#dcfce7; color:#166534; }}
-.month {{ margin: 26px 0 12px; font-size:22px; }}
-.timeline {{ position:relative; padding-left:24px; }}
-.timeline:before {{ content:""; position:absolute; left:7px; top:0; bottom:0; width:2px; background:var(--line); }}
-.event {{ position:relative; padding:14px 16px; background:#fff; border:1px solid var(--line); border-radius:16px; margin-bottom:12px; }}
-.event:before {{ content:""; position:absolute; left:-22px; top:20px; width:12px; height:12px; border-radius:50%; background:var(--blue); box-shadow:0 0 0 4px #dbeafe; }}
-.event.upcoming:before {{ background:var(--green); box-shadow:0 0 0 4px #dcfce7; }}
-.event.today {{ border-color:var(--blue); box-shadow:0 0 0 3px #dbeafe; }}
-.event h3 {{ margin:0 0 6px; }}
-.event p {{ margin:6px 0 0; color:var(--muted); }}
-.status {{ font-size:12px; padding:3px 8px; border-radius:999px; font-weight:800; background:#e5e7eb; color:#374151; }}
-.status.upcoming {{ background:#dcfce7; color:#166534; }}
-.status.today {{ background:#dbeafe; color:#1d4ed8; }}
-.cards-grid {{ display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:14px; }}
-.toggle {{ display:flex; gap:8px; margin-bottom:16px; }}
-.toggle button {{ border:1px solid var(--line); background:#fff; padding:9px 12px; border-radius:10px; cursor:pointer; font-weight:700; }}
-.toggle button.active {{ background:#111827; color:#fff; }}
-.taping-list {{ display:flex; flex-wrap:wrap; gap:10px; }}
-.taping {{ border:1px solid #f59e0b; background:#fffbeb; color:#92400e; padding:10px 12px; border-radius:999px; font-weight:700; }}
-.empty {{ color:var(--muted); text-align:center; padding:38px; }}
-@media (max-width: 760px) {{ .controls, .stats {{ grid-template-columns:1fr; }} header {{ padding:24px 18px 14px; }} }}
+.link {{ color:var(--blue); text-decoration:none; font-weight:500; }}
+.link:hover {{ text-decoration:underline; }}
+.taping-list {{ display:flex; flex-wrap:wrap; gap:8px; }}
+.taping {{ background:#fffbeb; border:1px solid #f59e0b; color:#92400e; padding:6px 12px; border-radius:20px; font-size:13px; font-weight:600; }}
+.timeline-item {{ border-left: 2px solid var(--line); padding-left: 20px; position:relative; margin-bottom:20px; }}
+.timeline-item::before {{ content:""; position:absolute; left:-7px; top:0; width:12px; height:12px; border-radius:50%; background:var(--blue); }}
+.date-label {{ font-weight:700; color:var(--muted); font-size:13px; margin-bottom:4px; }}
+.item-title {{ font-size:16px; font-weight:600; margin-bottom:4px; }}
+.item-meta {{ font-size:13px; color:var(--muted); }}
 </style>
 </head>
 <body>
-<header>
-  <h1>{safe_title}</h1>
-
-</header>
+<header><h1>{html.escape(title)}</h1></header>
 <main>
-  <nav class=\"tabs\" aria-label=\"Calendar tabs\">
-    <button class=\"tab active\" data-tab=\"calendar\">Marketing Calendar <span class=\"badge\" id=\"allCount\">0</span></button>
-    <button class=\"tab\" data-tab=\"broadcast\">Broadcast Schedule <span class=\"badge\" id=\"broadcastBadge\">0 upcoming</span></button>
-  </nav>
+    <div class="tabs">
+        <button class="tab active" onclick="showTab('calendar')">Marketing Calendar</button>
+        <button class="tab" onclick="showTab('broadcast')">Broadcast Schedule</button>
+    </div>
 
-  <section id=\"calendar\" class=\"panel active\">
-    <div class=\"stats\" id=\"stats\"></div>
-    <div class=\"card controls\">
-      <input id=\"search\" placeholder=\"Search title, notes, owner...\" />
-      <select id=\"categoryFilter\"><option value=\"\">All categories</option></select>
-      <select id=\"sourceFilter\"><option value=\"\">All sources</option></select>
-      <select id=\"monthFilter\"><option value=\"\">All months</option></select>
+    <div id="calendar" class="panel active">
+        <div class="card controls">
+            <input type="text" id="search" placeholder="Search communications..." oninput="render()">
+            <select id="typeFilter" onchange="render()"><option value="">All Types</option></select>
+            <select id="producerFilter" onchange="render()"><option value="">All Producers</option></select>
+        </div>
+        <div class="card" style="overflow-x:auto">
+            <table id="dataTable">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Description</th>
+                        <th>Type</th>
+                        <th>Producer</th>
+                        <th>Audience</th>
+                        <th>Link / Details</th>
+                    </tr>
+                </thead>
+                <tbody id="tableBody"></tbody>
+            </table>
+        </div>
     </div>
-    <div class=\"card table-wrap\">
-      <table>
-        <thead><tr><th>Date</th><th>Title</th><th>Category</th><th>Source</th><th>Owner</th><th>Status</th><th>Notes</th></tr></thead>
-        <tbody id=\"itemRows\"></tbody>
-      </table>
-    </div>
-  </section>
 
-  <section id=\"broadcast\" class=\"panel\">
-    <div class=\"card\">
-      <div class=\"toggle\"><button id=\"timelineBtn\" class=\"active\">Timeline</button><button id=\"cardsBtn\">Cards</button></div>
-      <div id=\"broadcastContent\"></div>
+    <div id="broadcast" class="panel">
+        <div class="card">
+            <h2>Taping Sessions</h2>
+            <div id="tapingList" class="taping-list"></div>
+        </div>
+        <div class="card">
+            <h2>Broadcast Timeline</h2>
+            <div id="timeline"></div>
+        </div>
     </div>
-    <div class=\"card\">
-      <h2>Taping Dates</h2>
-      <div id=\"tapings\" class=\"taping-list\"></div>
-    </div>
-  </section>
 </main>
-<script>
-const DATA = {data};
-const esc = value => String(value ?? '').replace(/[&<>\"]/g, c => ({{'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;'}}[c]));
-const fmtDate = d => {{ const parsed = new Date(d + 'T00:00:00'); return isNaN(parsed) ? d : parsed.toLocaleDateString(undefined, {{month:'short', day:'numeric', year:'numeric'}}); }};
-const monthLabel = d => {{ const parsed = new Date(d + 'T00:00:00'); return isNaN(parsed) ? 'Undated' : parsed.toLocaleDateString(undefined, {{month:'long', year:'numeric'}}); }};
-const unique = arr => [...new Set(arr.filter(Boolean))].sort();
-let broadcastMode = 'timeline';
 
-function chipClass(value) {{
-  const lower = String(value).toLowerCase();
-  if (lower.includes('broadcast') || lower.includes('tv')) return 'broadcast';
-  if (lower.includes('asana')) return 'asana';
-  return '';
+<script>
+const DATA = {data_json};
+
+function showTab(id) {{
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    event.target.classList.add('active');
 }}
-function populateFilters() {{
-  document.getElementById('allCount').textContent = DATA.items.length;
-  document.getElementById('broadcastBadge').textContent = `${{DATA.upcomingCount}} upcoming`;
-  const categories = unique(DATA.items.map(i => i.category));
-  const sources = unique(DATA.items.map(i => i.source));
-  const months = unique(DATA.items.map(i => monthLabel(i.date)));
-  document.getElementById('categoryFilter').innerHTML = '<option value="">All categories</option>' + categories.map(v => `<option>${{esc(v)}}</option>`).join('');
-  document.getElementById('sourceFilter').innerHTML = '<option value="">All sources</option>' + sources.map(v => `<option>${{esc(v)}}</option>`).join('');
-  document.getElementById('monthFilter').innerHTML = '<option value="">All months</option>' + months.map(v => `<option>${{esc(v)}}</option>`).join('');
+
+function render() {{
+    const search = document.getElementById('search').value.toLowerCase();
+    const type = document.getElementById('typeFilter').value;
+    const producer = document.getElementById('producerFilter').value;
+
+    const filtered = DATA.items.filter(i => {{
+        const matchSearch = i.title.toLowerCase().includes(search) || i.notes.toLowerCase().includes(search);
+        const matchType = !type || i.category === type;
+        const matchProducer = !producer || i.owner === producer;
+        return matchSearch && matchType && matchProducer;
+    }});
+
+    const tbody = document.getElementById('tableBody');
+    tbody.innerHTML = filtered.map(i => `
+        <tr>
+            <td style="white-space:nowrap">${{i.date || 'Undated'}}</td>
+            <td><strong>${{i.title}}</strong><br><small style="color:#64748b">${{i.notes}}</small></td>
+            <td><span class="chip ${{i.category === 'Broadcast/TV' ? 'broadcast' : ''}}">${{i.category}}</span></td>
+            <td>${{i.owner}}</td>
+            <td>${{i.audience}}</td>
+            <td>${{i.link ? `<a href="${{i.link}}" class="link" target="_blank">View Link</a>` : i.sheet}}</td>
+        </tr>
+    `).join('');
 }}
-function renderStats(items) {{
-  const upcoming = items.filter(i => i.date >= DATA.today).length;
-  const broadcast = items.filter(i => i.category.toLowerCase().includes('broadcast') || i.category.toLowerCase().includes('tv')).length;
-  const sources = unique(items.map(i => i.source)).length;
-  document.getElementById('stats').innerHTML = [
-    ['Total items', items.length], ['Upcoming', upcoming], ['Broadcast/TV', broadcast], ['Sources', sources]
-  ].map(([label, value]) => `<div class="stat"><strong>${{value}}</strong><span>${{label}}</span></div>`).join('');
+
+function init() {{
+    // Populate filters
+    const types = [...new Set(DATA.items.map(i => i.category))].sort();
+    const producers = [...new Set(DATA.items.map(i => i.owner))].sort();
+    
+    document.getElementById('typeFilter').innerHTML += types.map(t => `<option value="${{t}}">${{t}}</option>`).join('');
+    document.getElementById('producerFilter').innerHTML += producers.map(p => `<option value="${{p}}">${{p}}</option>`).join('');
+
+    // Render Tapings
+    document.getElementById('tapingList').innerHTML = DATA.tapings.map(t => `
+        <div class="taping">${{t.date}}</div>
+    `).join('');
+
+    // Render Timeline
+    document.getElementById('timeline').innerHTML = DATA.broadcast.map(i => `
+        <div class="timeline-item">
+            <div class="date-label">${{i.date}}</div>
+            <div class="item-title">${{i.title}}</div>
+            <div class="item-meta">${{i.owner}} • ${{i.audience}}</div>
+        </div>
+    `).join('');
+
+    render();
 }}
-function filteredItems() {{
-  const q = document.getElementById('search').value.toLowerCase();
-  const category = document.getElementById('categoryFilter').value;
-  const source = document.getElementById('sourceFilter').value;
-  const month = document.getElementById('monthFilter').value;
-  return DATA.items.filter(i => {{
-    const haystack = `${{i.title}} ${{i.notes}} ${{i.owner}} ${{i.status}}`.toLowerCase();
-    return (!q || haystack.includes(q)) && (!category || i.category === category) && (!source || i.source === source) && (!month || monthLabel(i.date) === month);
-  }});
-}}
-function renderCalendar() {{
-  const items = filteredItems();
-  renderStats(items);
-  document.getElementById('itemRows').innerHTML = items.length ? items.map(i => `<tr><td>${{fmtDate(i.date)}}</td><td><strong>${{esc(i.title)}}</strong></td><td><span class="chip ${{chipClass(i.category)}}">${{esc(i.category)}}</span></td><td>${{esc(i.source)}}</td><td>${{esc(i.owner)}}</td><td>${{esc(i.status)}}</td><td>${{esc(i.notes)}}</td></tr>`).join('') : `<tr><td colspan="7" class="empty">No items match the current filters.</td></tr>`;
-}}
-function eventCard(i) {{
-  const isToday = i.date === DATA.today;
-  const isUpcoming = i.date >= DATA.today;
-  const status = isToday ? 'Today' : (isUpcoming ? 'Upcoming' : 'Aired');
-  return `<article class="event ${{isUpcoming ? 'upcoming' : ''}} ${{isToday ? 'today' : ''}}"><h3>${{esc(i.title)}}</h3><span class="status ${{isToday ? 'today' : (isUpcoming ? 'upcoming' : '')}}">${{status}}</span> <span>${{fmtDate(i.date)}}</span><p>${{esc(i.notes || i.owner || i.sheet || '')}}</p></article>`;
-}}
-function renderBroadcast() {{
-  const root = document.getElementById('broadcastContent');
-  if (!DATA.broadcast.length) {{ root.innerHTML = '<p class="empty">No broadcast items were detected. Add words like TV, broadcast, show, episode, or air date to your source data, or set the Type/Category column to Broadcast/TV.</p>'; return; }}
-  if (broadcastMode === 'cards') {{
-    root.innerHTML = `<div class="cards-grid">${{DATA.broadcast.map(eventCard).join('')}}</div>`;
-  }} else {{
-    const grouped = DATA.broadcast.reduce((acc, item) => {{ const m = monthLabel(item.date); (acc[m] ||= []).push(item); return acc; }}, {{}});
-    root.innerHTML = Object.entries(grouped).map(([month, items]) => `<h2 class="month">${{esc(month)}}</h2><div class="timeline">${{items.map(eventCard).join('')}}</div>`).join('');
-  }}
-  document.getElementById('tapings').innerHTML = DATA.tapings.length ? DATA.tapings.map(t => `<span class="taping">${{esc(t.title)}}: ${{esc(t.date)}}</span>`).join('') : '<span class="empty">No taping sheet/date ranges detected.</span>';
-}}
-document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => {{
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-  tab.classList.add('active'); document.getElementById(tab.dataset.tab).classList.add('active');
-}}));
-['search','categoryFilter','sourceFilter','monthFilter'].forEach(id => document.getElementById(id).addEventListener('input', renderCalendar));
-document.getElementById('timelineBtn').addEventListener('click', () => {{ broadcastMode='timeline'; document.getElementById('timelineBtn').classList.add('active'); document.getElementById('cardsBtn').classList.remove('active'); renderBroadcast(); }});
-document.getElementById('cardsBtn').addEventListener('click', () => {{ broadcastMode='cards'; document.getElementById('cardsBtn').classList.add('active'); document.getElementById('timelineBtn').classList.remove('active'); renderBroadcast(); }});
-populateFilters(); renderCalendar(); renderBroadcast();
+
+init();
 </script>
 </body>
-</html>"""
+</html>
+"""
 
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate a standalone tabbed marketing calendar HTML file.")
-    parser.add_argument("--asana-csv", type=Path, help="Optional Asana CSV export path.")
-    parser.add_argument("--communications-xlsx", type=Path, help="Optional communications calendar Excel workbook path.")
-    parser.add_argument("--output", type=Path, default=Path("marketing-calendar-standalone.html"), help="Output HTML path.")
-    parser.add_argument("--title", default="Marketing Calendar", help="Calendar page title.")
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--xlsx", type=Path, required=True)
+    parser.add_argument("--output", type=Path, default=Path("index.html"))
     args = parser.parse_args()
 
-    items: list[CalendarItem] = []
-    if args.asana_csv:
-        items.extend(load_tabular_file(args.asana_csv, "Asana", args.asana_csv.stem))
-    if args.communications_xlsx:
-        items.extend(load_tabular_file(args.communications_xlsx, "Communications Calendar"))
-        tapings = extract_tapings(args.communications_xlsx)
-    else:
-        tapings = []
-
-    if not items:
-        raise SystemExit("No dated calendar items were found. Check that your files include date and title/name columns.")
-
-    args.output.write_text(generate_html(items, tapings, args.title), encoding="utf-8")
-    print(f"Wrote {args.output} with {len(items)} items and {len(tapings)} taping dates.")
-
+    items, tapings = load_calendar_data(args.xlsx)
+    html_content = generate_html(items, tapings, "Jewish Voice Marketing Calendar")
+    args.output.write_text(html_content, encoding="utf-8")
+    print(f"Generated {args.output} with {len(items)} items.")
 
 if __name__ == "__main__":
     main()
