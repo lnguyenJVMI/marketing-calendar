@@ -263,7 +263,7 @@ th {{ color:var(--muted); font-size:12px; text-transform:uppercase; letter-spaci
 <body>
 <header>
   <h1>{safe_title}</h1>
-  <p>Standalone, static HTML calendar generated from CSV/XLSX exports. Host it on GitHub Pages or Azure Static Web Apps Free, then embed the hosted URL in SharePoint if your site admin allows the domain.</p>
+
 </header>
 <main>
   <nav class=\"tabs\" aria-label=\"Calendar tabs\">
