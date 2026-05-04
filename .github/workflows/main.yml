@@ -3,8 +3,7 @@ on:
   push:
     branches: [ main ]
     paths:
-      - '**.xlsx'
-      - '**.csv'
+      - '.github/datafiles/**'
       - 'generate_calendar.py'
   workflow_dispatch:
 env:
@@ -21,12 +20,8 @@ jobs:
           python-version: '3.11'
       - run: pip install pandas openpyxl
       - name: Generate Calendar
-        run: |
-          python generate_calendar.py \
-            --xlsx "Communications Calendar 2026.xlsx" \
-            --csv "Marketing_calendar.csv" \
-            --output index.html
+        run: python generate_calendar.py --data-dir ".github/datafiles" --output index.html
       - uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "Auto-update calendar from multi-source"
+          commit_message: "Auto-update calendar from datafiles folder"
           file_pattern: 'index.html'
