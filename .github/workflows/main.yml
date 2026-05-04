@@ -6,8 +6,6 @@ on:
       - '.github/datafiles/**'
       - 'generate_calendar.py'
   workflow_dispatch:
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -23,5 +21,5 @@ jobs:
         run: python generate_calendar.py --data-dir ".github/datafiles" --output index.html
       - uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "Auto-update calendar from datafiles folder"
+          commit_message: "Auto-update calendar"
           file_pattern: 'index.html'
