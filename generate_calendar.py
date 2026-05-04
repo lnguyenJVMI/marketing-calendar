@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Jewish Voice Marketing Calendar Generator - Folder-Based Version.
-Automatically finds and processes ANY .xlsx or .csv files in .github/datafiles/
+Jewish Voice Marketing Calendar Generator - Hyperlink Extraction Version.
+Extracts actual URLs from Excel cells instead of just the display text.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Iterable, Optional, Dict, Any
 
 import pandas as pd
+import openpyxl
 
 @dataclass
 class CalendarItem:
@@ -54,11 +55,11 @@ def normalized(value: object) -> str:
 def normalize_col(column: object) -> str:
     return re.sub(r"[^a-z0-9]", "", str(column).lower())
 
-def find_col(df_cols: Iterable[str], target: str) -> Optional[str]:
+def find_col_idx(df_cols: Iterable[str], target: str) -> Optional[int]:
     target_norm = normalize_col(target)
-    for col in df_cols:
+    for i, col in enumerate(df_cols):
         if normalize_col(col) == target_norm:
-            return col
+            return i
     return None
 
 def parse_date(value: object) -> str:
@@ -74,82 +75,120 @@ def parse_date(value: object) -> str:
         return parsed.strftime("%Y-%m-%d")
     return text
 
-def process_dataframe(df: pd.DataFrame, source_name: str) -> list[CalendarItem]:
+def extract_excel_with_links(path: Path) -> list[CalendarItem]:
     items = []
-    cols = df.columns
-    c_desc = find_col(cols, "Description") or find_col(cols, "Name of Communication") or find_col(cols, "Title") or find_col(cols, "Task Name")
-    c_date = find_col(cols, "Target Date") or find_col(cols, "Air Date") or find_col(cols, "Due Date") or find_col(cols, "Date")
-    c_type = find_col(cols, "Type") or find_col(cols, "Category") or find_col(cols, "Section")
-    c_prod = find_col(cols, "Producer") or find_col(cols, "Owner") or find_col(cols, "Assignee")
-    c_aud = find_col(cols, "Audience")
-    c_link = find_col(cols, "Vanity Link") or find_col(cols, "Ops Database for Offer Codes") or find_col(cols, "Vanity linl") or find_col(cols, "Link")
-    c_job = find_col(cols, "BBS Job Number") or find_col(cols, "Job Number")
-    c_prem = find_col(cols, "Premium")
-    c_art = find_col(cols, "BBS Final Art") or find_col(cols, "Final Art")
-    c_seg = find_col(cols, "Segment Code")
-    c_notes = find_col(cols, "Notes") or find_col(cols, "Subject")
-
-    if not c_desc:
-        return items
-
-    for _, row in df.iterrows():
-        title = normalized(row.get(c_desc))
-        if not title: continue
+    wb = openpyxl.load_workbook(path, data_only=False)
+    
+    for sheet_name in wb.sheet_names:
+        if "taping" in sheet_name.lower():
+            continue
+            
+        ws = wb[sheet_name]
+        rows = list(ws.values)
+        if not rows: continue
         
-        date = parse_date(row.get(c_date)) if c_date else ""
-        category = normalized(row.get(c_type)) if c_type else "General"
+        headers = [str(h) for h in rows[0]]
         
-        if "broadcast" in (title + " " + category).lower() or "tv" in (title + " " + category).lower():
-            category = "Broadcast/TV"
+        # Find column indices
+        c_desc = find_col_idx(headers, "Description") or find_col_idx(headers, "Name of Communication") or find_col_idx(headers, "Title")
+        c_date = find_col_idx(headers, "Target Date") or find_col_idx(headers, "Air Date") or find_col_idx(headers, "Date")
+        c_type = find_col_idx(headers, "Type") or find_col_idx(headers, "Category")
+        c_prod = find_col_idx(headers, "Producer") or find_col_idx(headers, "Owner")
+        c_aud = find_col_idx(headers, "Audience")
+        c_link = find_col_idx(headers, "Vanity Link") or find_col_idx(headers, "Ops Database for Offer Codes") or find_col_idx(headers, "Vanity linl")
+        c_job = find_col_idx(headers, "BBS Job Number") or find_col_idx(headers, "Job Number")
+        c_prem = find_col_idx(headers, "Premium")
+        c_art = find_col_idx(headers, "BBS Final Art") or find_col_idx(headers, "Final Art")
+        c_seg = find_col_idx(headers, "Segment Code")
+        c_notes = find_col_idx(headers, "Notes") or find_col_idx(headers, "Subject")
 
-        items.append(CalendarItem(
-            title=title, date=date, source=source_name, category=category,
-            owner=normalized(row.get(c_prod)) if c_prod else "",
-            audience=normalized(row.get(c_aud)) if c_aud else "",
-            link=normalized(row.get(c_link)) if c_link else "",
-            notes=normalized(row.get(c_notes)) if c_notes else "",
-            job_number=normalized(row.get(c_job)) if c_job else "",
-            premium=normalized(row.get(c_prem)) if c_prem else "",
-            final_art=normalized(row.get(c_art)) if c_art else "",
-            segment_code=normalized(row.get(c_seg)) if c_seg else "",
-        ))
+        if c_desc is None: continue
+
+        # Process rows (skip header)
+        for r_idx, row_vals in enumerate(ws.iter_rows(min_row=2), start=2):
+            title = normalized(row_vals[c_desc].value)
+            if not title: continue
+            
+            # Extract Link URL specifically
+            link_url = ""
+            if c_link is not None:
+                cell = row_vals[c_link]
+                if cell.hyperlink:
+                    link_url = cell.hyperlink.target
+                else:
+                    # Fallback to text if it looks like a URL
+                    val = normalized(cell.value)
+                    if val.startswith("http"):
+                        link_url = val
+
+            date = parse_date(row_vals[c_date].value) if c_date is not None else ""
+            category = normalized(row_vals[c_type].value) if c_type is not None else "General"
+            
+            if "broadcast" in (title + " " + category).lower() or "tv" in (title + " " + category).lower():
+                category = "Broadcast/TV"
+
+            items.append(CalendarItem(
+                title=title, date=date, source=f"Excel ({path.name})", category=category,
+                owner=normalized(row_vals[c_prod].value) if c_prod is not None else "",
+                audience=normalized(row_vals[c_aud].value) if c_aud is not None else "",
+                link=link_url,
+                notes=normalized(row_vals[c_notes].value) if c_notes is not None else "",
+                job_number=normalized(row_vals[c_job].value) if c_job is not None else "",
+                premium=normalized(row_vals[c_prem].value) if c_prem is not None else "",
+                final_art=normalized(row_vals[c_art].value) if c_art is not None else "",
+                segment_code=normalized(row_vals[c_seg].value) if c_seg is not None else "",
+            ))
     return items
 
-def load_from_folder(folder_path: Path) -> tuple[list[CalendarItem], list[TapingDate]]:
+def load_latest_from_folder(folder_path: Path) -> tuple[list[CalendarItem], list[TapingDate]]:
     all_items: list[CalendarItem] = []
     all_tapings: list[TapingDate] = []
     
     if not folder_path.exists():
-        print(f"Warning: Folder {folder_path} not found.")
         return all_items, all_tapings
 
-    for file in os.listdir(folder_path):
-        path = folder_path / file
+    xlsx_files = [folder_path / f for f in os.listdir(folder_path) if f.lower().endswith(".xlsx") and not f.startswith("~$")]
+    csv_files = [folder_path / f for f in os.listdir(folder_path) if f.lower().endswith(".csv")]
+    
+    if xlsx_files:
+        latest_xlsx = max(xlsx_files, key=os.path.getmtime)
+        print(f"Processing Latest Excel: {latest_xlsx.name}")
+        all_items.extend(extract_excel_with_links(latest_xlsx))
         
-        if path.suffix.lower() == ".xlsx" and not file.startswith("~$"):
-            print(f"Processing Excel: {file}")
-            try:
-                xl = pd.ExcelFile(path)
-                for sheet in xl.sheet_names:
+        # Still need tapings from the same file
+        try:
+            xl = pd.ExcelFile(latest_xlsx)
+            for sheet in xl.sheet_names:
+                if "taping" in sheet.lower():
                     df = xl.parse(sheet)
-                    if "taping" in sheet.lower():
-                        for col in df.columns:
-                            if any(m in str(col).lower() for m in ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]):
-                                all_tapings.append(TapingDate(title="Taping Session", date=str(col)))
-                            for val in df[col].dropna():
-                                all_tapings.append(TapingDate(title="Taping Session", date=str(val)))
-                    else:
-                        all_items.extend(process_dataframe(df, f"Excel ({file})"))
-            except Exception as e:
-                print(f"Error reading {file}: {e}")
+                    for col in df.columns:
+                        if any(m in str(col).lower() for m in ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]):
+                            all_tapings.append(TapingDate(title="Taping Session", date=str(col)))
+                        for val in df[col].dropna():
+                            all_tapings.append(TapingDate(title="Taping Session", date=str(val)))
+        except: pass
 
-        elif path.suffix.lower() == ".csv":
-            print(f"Processing CSV: {file}")
-            try:
-                df_csv = pd.read_csv(path)
-                all_items.extend(process_dataframe(df_csv, f"CSV ({file})"))
-            except Exception as e:
-                print(f"Error reading {file}: {e}")
+    if csv_files:
+        latest_csv = max(csv_files, key=os.path.getmtime)
+        print(f"Processing Latest CSV: {latest_csv.name}")
+        try:
+            df_csv = pd.read_csv(latest_csv)
+            # CSVs don't have hidden hyperlinks, so we use the standard processor
+            from generate_calendar import process_dataframe # type: ignore
+            # (Self-contained fallback for process_dataframe logic)
+            cols = df_csv.columns
+            c_desc = find_col_idx(cols, "Description") or find_col_idx(cols, "Task Name")
+            c_date = find_col_idx(cols, "Target Date") or find_col_idx(cols, "Due Date")
+            if c_desc is not None:
+                for _, row in df_csv.iterrows():
+                    title = normalized(row.iloc[c_desc])
+                    if title:
+                        all_items.append(CalendarItem(
+                            title=title, date=parse_date(row.iloc[c_date]) if c_date is not None else "",
+                            source=f"CSV ({latest_csv.name})", category="General"
+                        ))
+        except Exception as e:
+            print(f"Error reading CSV: {e}")
             
     return all_items, all_tapings
 
@@ -345,10 +384,10 @@ def main():
     parser.add_argument("--output", type=Path, default=Path("index.html"))
     args = parser.parse_args()
 
-    items, tapings = load_from_folder(args.data_dir)
+    items, tapings = load_latest_from_folder(args.data_dir)
     html_content = generate_html(items, tapings, "Jewish Voice Marketing Calendar")
     args.output.write_text(html_content, encoding="utf-8")
-    print(f"Generated {args.output} with {len(items)} items from {args.data_dir}.")
+    print(f"Generated {args.output} with {len(items)} items from latest files in {args.data_dir}.")
 
 if __name__ == "__main__":
     main()
