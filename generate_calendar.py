@@ -199,7 +199,7 @@ tr:hover td {{ background: #f8fafc; }}
 <body>
 <header>
     <h1>{html.escape(title)}</h1>
-    <div class="last-updated">Updated: {datetime.now().strftime("%b %d, %Y")}</div>
+    <div class="last-updated">Last Updated: {datetime.now().strftime("%b %d, %Y")}</div>
 </header>
 <main>
     <div class="tabs">
