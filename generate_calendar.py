@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Comprehensive Marketing Calendar Generator for Jewish Voice.
-Captures all fields: Vanity Link, Premium, BBS Final Art, Segment Code, Job Number, etc.
+Jewish Voice Marketing Calendar Generator - Exact Column Matching Version.
+Matches: Description, Target Date, Producer, Type, Audience, BBS Job Number, Vanity Link, Premium, BBS Final Art, Segment Code.
 """
 
 from __future__ import annotations
@@ -17,25 +17,6 @@ from typing import Iterable, Optional, Dict, Any
 
 import pandas as pd
 
-# Column detection candidates
-DATE_CANDIDATES = ["target date", "air date", "date", "start date", "publish date"]
-TITLE_CANDIDATES = ["description", "name of communication", "title", "task name"]
-TYPE_CANDIDATES = ["type", "category", "channel"]
-OWNER_CANDIDATES = ["producer", "assignee", "owner", "lead"]
-LINK_CANDIDATES = ["vanity link", "link", "url"]
-AUDIENCE_CANDIDATES = ["audience"]
-NOTES_CANDIDATES = ["notes", "subject"]
-
-# Specific Jewish Voice Fields
-JV_FIELDS = {
-    "job_number": ["bbs job number", "job number"],
-    "premium": ["premium"],
-    "final_art": ["bbs final art", "final art"],
-    "segment_code": ["segment code"],
-}
-
-BROADCAST_KEYWORDS = ["broadcast", "tv", "television", "show", "episode", "air", "aired"]
-
 @dataclass
 class CalendarItem:
     title: str
@@ -50,7 +31,6 @@ class CalendarItem:
     premium: str = ""
     final_art: str = ""
     segment_code: str = ""
-    extra_details: Dict[str, str] = field(default_factory=dict)
 
 @dataclass
 class TapingDate:
@@ -64,24 +44,11 @@ def normalized(value: object) -> str:
     val = str(value).strip()
     if val.lower() in ["nan", "nat", "none"]:
         return ""
-    # Handle scientific notation for job numbers if they come in as floats
-    if isinstance(value, float) and value > 1000:
-        return f"{int(value)}"
+    if isinstance(value, float):
+        if value == int(value):
+            return f"{int(value)}"
+        return f"{value}"
     return val
-
-def normalize_col(column: object) -> str:
-    return re.sub(r"\s+", " ", str(column).strip().lower())
-
-def find_column(columns: Iterable[object], candidates: list[str]) -> Optional[object]:
-    lookup = {normalize_col(c): c for c in columns}
-    for candidate in candidates:
-        if candidate in lookup:
-            return lookup[candidate]
-    for col in columns:
-        ncol = normalize_col(col)
-        if any(candidate in ncol for candidate in candidates):
-            return col
-    return None
 
 def parse_date(value: object) -> str:
     if value is None or pd.isna(value):
@@ -106,7 +73,6 @@ def load_calendar_data(path: Path) -> tuple[list[CalendarItem], list[TapingDate]
     xl = pd.ExcelFile(path)
     for sheet_name in xl.sheet_names:
         df = xl.parse(sheet_name)
-        df = df.dropna(axis=1, how="all")
         
         if "taping" in sheet_name.lower():
             for col in df.columns:
@@ -116,29 +82,22 @@ def load_calendar_data(path: Path) -> tuple[list[CalendarItem], list[TapingDate]
                     tapings.append(TapingDate(title="Taping Session", date=str(val)))
             continue
 
-        date_col = find_column(df.columns, DATE_CANDIDATES)
-        title_col = find_column(df.columns, TITLE_CANDIDATES)
-        type_col = find_column(df.columns, TYPE_CANDIDATES)
-        owner_col = find_column(df.columns, OWNER_CANDIDATES)
-        link_col = find_column(df.columns, LINK_CANDIDATES)
-        audience_col = find_column(df.columns, AUDIENCE_CANDIDATES)
-        notes_col = find_column(df.columns, NOTES_CANDIDATES)
-        
-        # Map JV specific fields
-        jv_cols = {k: find_column(df.columns, v) for k, v in JV_FIELDS.items()}
-
-        if not title_col:
-            continue
-
+        # Exact column mapping based on user input
         for _, row in df.iterrows():
-            title = normalized(row.get(title_col))
+            # We use .get() with exact names provided by the user
+            title = normalized(row.get("Description"))
+            if not title:
+                # Fallback to other common title names if 'Description' is missing
+                title = normalized(row.get("Name of Communication")) or normalized(row.get("Title"))
+            
             if not title:
                 continue
                 
-            date = parse_date(row.get(date_col)) if date_col else ""
-            category = normalized(row.get(type_col)) if type_col else "General"
+            date = parse_date(row.get("Target Date"))
+            category = normalized(row.get("Type")) or "General"
             
-            if any(k in (title + " " + category).lower() for k in BROADCAST_KEYWORDS):
+            # Auto-classify as Broadcast if keywords found
+            if "broadcast" in (title + " " + category).lower() or "tv" in (title + " " + category).lower():
                 category = "Broadcast/TV"
 
             items.append(CalendarItem(
@@ -146,14 +105,14 @@ def load_calendar_data(path: Path) -> tuple[list[CalendarItem], list[TapingDate]
                 date=date,
                 source="Communications Calendar",
                 category=category,
-                owner=normalized(row.get(owner_col)) if owner_col else "",
-                audience=normalized(row.get(audience_col)) if audience_col else "",
-                link=normalized(row.get(link_col)) if link_col else "",
-                notes=normalized(row.get(notes_col)) if notes_col else "",
-                job_number=normalized(row.get(jv_cols["job_number"])) if jv_cols["job_number"] else "",
-                premium=normalized(row.get(jv_cols["premium"])) if jv_cols["premium"] else "",
-                final_art=normalized(row.get(jv_cols["final_art"])) if jv_cols["final_art"] else "",
-                segment_code=normalized(row.get(jv_cols["segment_code"])) if jv_cols["segment_code"] else "",
+                owner=normalized(row.get("Producer")),
+                audience=normalized(row.get("Audience")),
+                link=normalized(row.get("Vanity Link")) or normalized(row.get("Ops Database for Offer Codes")),
+                notes=normalized(row.get("Notes")) or normalized(row.get("Subject")),
+                job_number=normalized(row.get("BBS Job Number")),
+                premium=normalized(row.get("Premium")),
+                final_art=normalized(row.get("BBS Final Art")),
+                segment_code=normalized(row.get("Segment Code")),
             ))
             
     return items, tapings
@@ -164,14 +123,12 @@ def generate_html(items: list[CalendarItem], tapings: list[TapingDate], title: s
     undated = [i for i in items if not i.date]
     
     broadcast = [i for i in items_sorted if i.category == "Broadcast/TV"]
-    upcoming_count = sum(1 for i in broadcast if i.date >= today)
 
     payload = {
         "items": [asdict(i) for i in items_sorted + undated],
         "broadcast": [asdict(i) for i in broadcast],
         "tapings": [asdict(t) for t in tapings],
         "today": today,
-        "upcomingCount": upcoming_count,
     }
     
     data_json = json.dumps(payload, ensure_ascii=False)
@@ -198,14 +155,12 @@ main {{ max-width: 1400px; margin: 0 auto; padding: 24px; }}
 .card {{ background:#fff; border:1px solid var(--line); border-radius:12px; padding:24px; margin-bottom:24px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }}
 .controls {{ display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:16px; margin-bottom:24px; }}
 input, select {{ padding:10px 14px; border:1px solid var(--line); border-radius:8px; width:100%; box-sizing:border-box; font-size: 14px; }}
-input:focus {{ outline: 2px solid var(--blue); border-color: transparent; }}
 table {{ width:100%; border-collapse:collapse; font-size: 14px; }}
 th, td {{ padding:14px; text-align:left; border-bottom:1px solid var(--line); vertical-align: top; }}
 th {{ background:#f8fafc; font-size:11px; text-transform:uppercase; color:var(--muted); font-weight: 700; letter-spacing: 0.05em; }}
 tr:hover td {{ background: #f8fafc; }}
 .chip {{ display:inline-block; padding:2px 10px; border-radius:20px; font-size:11px; font-weight:700; background:#f1f5f9; color: var(--muted); }}
 .chip.broadcast {{ background:#dcfce7; color:#166534; }}
-.chip.dm {{ background:#dbeafe; color:#1e40af; }}
 .link-btn {{ display: inline-flex; align-items: center; gap: 6px; background: var(--blue); color: #fff; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 12px; font-weight: 600; }}
 .link-btn:hover {{ background: #0369a1; }}
 .detail-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; margin-top: 8px; }}
@@ -213,7 +168,6 @@ tr:hover td {{ background: #f8fafc; }}
 .detail-label {{ font-weight: 700; color: var(--ink); text-transform: uppercase; font-size: 9px; display: block; }}
 .taping-list {{ display:flex; flex-wrap:wrap; gap:10px; }}
 .taping {{ background:#fff7ed; border:1px solid #fed7aa; color:#9a3412; padding:8px 16px; border-radius:12px; font-size:14px; font-weight:600; }}
-.timeline {{ position: relative; padding: 20px 0; }}
 .timeline-item {{ border-left: 3px solid var(--blue); padding: 0 0 32px 24px; position:relative; }}
 .timeline-item::before {{ content:""; position:absolute; left:-9px; top:0; width:15px; height:15px; border-radius:50%; background:#fff; border: 3px solid var(--blue); }}
 .timeline-date {{ font-weight:800; color:var(--blue); font-size:14px; margin-bottom:8px; }}
@@ -234,7 +188,7 @@ tr:hover td {{ background: #f8fafc; }}
 
     <div id="calendar" class="panel active">
         <div class="card controls">
-            <input type="text" id="search" placeholder="Search by title, notes, or job #..." oninput="render()">
+            <input type="text" id="search" placeholder="Search by title, job #, or premium..." oninput="render()">
             <select id="typeFilter" onchange="render()"><option value="">All Types</option></select>
             <select id="producerFilter" onchange="render()"><option value="">All Producers</option></select>
         </div>
@@ -300,7 +254,7 @@ function render() {{
                     ${{i.final_art ? `<div class="detail-item"><span class="detail-label">Final Art</span>${{i.final_art}}</div>` : ''}}
                 </div>
             </td>
-            <td><span class="chip ${{i.category === 'Broadcast/TV' ? 'broadcast' : (i.category === 'DM' ? 'dm' : '')}}">${{i.category}}</span></td>
+            <td><span class="chip ${{i.category === 'Broadcast/TV' ? 'broadcast' : ''}}">${{i.category}}</span></td>
             <td>
                 <div style="font-weight: 600;">${{i.owner}}</div>
                 <div style="font-size: 11px; color: var(--muted);">${{i.audience}}</div>
@@ -334,6 +288,7 @@ function init() {{
                     <div class="detail-item"><span class="detail-label">Audience</span>${{i.audience}}</div>
                     ${{i.job_number ? `<div class="detail-item"><span class="detail-label">Job #</span>${{i.job_number}}</div>` : ''}}
                     ${{i.premium ? `<div class="detail-item"><span class="detail-label">Premium</span>${{i.premium}}</div>` : ''}}
+                    ${{i.segment_code ? `<div class="detail-item"><span class="detail-label">Segment</span>${{i.segment_code}}</div>` : ''}}
                 </div>
                 ${{i.link ? `<a href="${{i.link}}" class="link-btn" target="_blank">🔗 Open Vanity Link</a>` : ''}}
             </div>
