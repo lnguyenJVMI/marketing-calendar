@@ -55,13 +55,20 @@ def parse_dt(val: Any) -> str:
 
 def get_link(cell: Any) -> str:
     if not cell: return ""
-    if hasattr(cell, 'hyperlink') and cell.hyperlink:
+    # Try to get the hyperlink target directly
+    if hasattr(cell, 'hyperlink') and cell.hyperlink and cell.hyperlink.target:
         return cell.hyperlink.target
+    
     val = str(cell.value) if cell.value else ""
-    if val.startswith("http"): return val
-    if "HYPERLINK" in val:
-        m = re.search(r'HYPERLINK\("([^"]+)"', val)
+    
+    # If the value is a HYPERLINK formula
+    if "HYPERLINK" in val.upper():
+        m = re.search(r'HYPERLINK\("([^"]+)"\)', val)
         if m: return m.group(1)
+        
+    # If the value itself is a URL
+    if val.startswith("http"): return val
+    
     return ""
 
 def process_xlsx(path: Path) -> tuple[list[CalendarItem], list[TapingDate]]:
@@ -133,6 +140,7 @@ def process_csv(path: Path) -> list[CalendarItem]:
     try:
         df = pd.read_csv(path)
         hdrs = [re.sub(r'[^a-z]', '', str(c).lower()) for c in df.columns]
+        
         def find_idx(targets):
             for t in targets:
                 norm_t = re.sub(r'[^a-z]', '', t.lower())
@@ -162,9 +170,9 @@ def main():
 
     all_items, all_tapings = [], []
     if args.data_dir.exists():
-        files = [args.data_dir / f for f in os.listdir(args.data_dir) if not f.startswith('~$')]
-        xlsx = sorted([f for f in files if f.suffix == '.xlsx'], key=os.path.getmtime, reverse=True)
-        csvs = sorted([f for f in files if f.suffix == '.csv'], key=os.path.getmtime, reverse=True)
+        files = [args.data_dir / f for f in os.listdir(args.data_dir) if not f.startswith("~$")]
+        xlsx = sorted([f for f in files if f.suffix == ".xlsx"], key=os.path.getmtime, reverse=True)
+        csvs = sorted([f for f in files if f.suffix == ".csv"], key=os.path.getmtime, reverse=True)
         
         if xlsx:
             it, tp = process_xlsx(xlsx[0])
@@ -188,108 +196,10 @@ def main():
         "updated": datetime.now().strftime("%b %d, %Y")
     }, ensure_ascii=False)
 
-    html_template = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Marketing Calendar</title>
-    <style>
-        :root {{ --jv-blue: #1e3a8a; --blue: #0284c7; --bg: #f1f5f9; --ink: #1e293b; --muted: #64748b; }}
-        body {{ font-family: 'Inter', sans-serif; margin: 0; background: var(--bg); color: var(--ink); scroll-behavior: smooth; }}
-        header {{ background: var(--jv-blue); color: white; padding: 20px 40px; display: flex; justify-content: space-between; align-items: center; }}
-        main {{ max-width: 1400px; margin: 0 auto; padding: 20px; }}
-        .tabs {{ display: flex; gap: 10px; margin-bottom: 20px; }}
-        .tab {{ padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; background: #e2e8f0; color: var(--muted); }}
-        .tab.active {{ background: white; color: var(--jv-blue); box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
-        .panel {{ display: none; }} .panel.active {{ display: block; }}
-        .card {{ background: white; padding: 20px; border-radius: 12px; border: 1px solid #cbd5e1; margin-bottom: 20px; }}
-        table {{ width: 100%; border-collapse: collapse; font-size: 14px; }}
-        th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #e2e8f0; vertical-align: top; }}
-        th {{ background: #f8fafc; color: var(--muted); font-size: 11px; text-transform: uppercase; }}
-        .link-btn {{ background: var(--blue); color: white; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 12px; font-weight: bold; display: inline-block; }}
-        .detail-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-top: 10px; }}
-        .detail-item {{ font-size: 11px; color: var(--muted); }}
-        .detail-label {{ font-weight: bold; color: var(--ink); display: block; text-transform: uppercase; font-size: 9px; }}
-        .taping-btn {{ background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; padding: 8px 15px; border-radius: 20px; cursor: pointer; font-weight: bold; margin: 5px; }}
-        .timeline-item {{ border-left: 3px solid var(--blue); padding: 0 0 30px 20px; position: relative; margin-left: 10px; }}
-        .timeline-item::before {{ content: ""; position: absolute; left: -9px; top: 0; width: 15px; height: 15px; background: white; border: 3px solid var(--blue); border-radius: 50%; }}
-    </style>
-</head>
-<body>
-    <header><h1>Marketing Calendar</h1><div style="font-size: 12px;">Last Updated: <span id="update-date"></span></div></header>
-    <main>
-        <div class="tabs">
-            <button class="tab active" onclick="showTab('cal')">Calendar</button>
-            <button class="tab" onclick="showTab('bc')">Broadcast Schedule</button>
-        </div>
-        <div id="cal" class="panel active">
-            <div class="card"><input type="text" id="search" placeholder="Search..." oninput="render()" style="width:100%; padding:10px; border-radius:8px; border:1px solid #cbd5e1;"></div>
-            <div class="card" style="padding:0; overflow-x:auto;">
-                <table><thead><tr><th>Date</th><th>Details</th><th>Type</th><th>Producer/Audience</th><th>Link</th></tr></thead><tbody id="tbody"></tbody></table>
-            </div>
-        </div>
-        <div id="bc" class="panel">
-            <div class="card"><h3>Taping Sessions</h3><div id="tapings"></div></div>
-            <div id="timeline"></div>
-        </div>
-    </main>
-    <script>
-        const DATA = {payload};
-        document.getElementById('update-date').innerText = DATA.updated;
-        function showTab(id) {{
-            document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.getElementById(id).classList.add('active');
-            event.target.classList.add('active');
-        }}
-        function jump(date) {{
-            showTab('bc');
-            setTimeout(() => {{
-                const el = document.querySelector(`[data-date="${{date}}"]`);
-                if(el) el.scrollIntoView({{behavior:'smooth', block:'center'}});
-            }}, 100);
-        }}
-        function render() {{
-            const s = document.getElementById('search').value.toLowerCase();
-            const filtered = DATA.items.filter(i => (i.title + i.notes + i.job_number + i.premium).toLowerCase().includes(s));
-            document.getElementById('tbody').innerHTML = filtered.map(i => `
-                <tr>
-                    <td style="font-weight:bold; color:var(--jv-blue); white-space:nowrap;">${{i.date || 'Undated'}}</td>
-                    <td>
-                        <div style="font-weight:bold; font-size:15px;">${{i.title}}</div>
-                        <div style="color:var(--muted); font-size:13px;">${{i.notes}}</div>
-                        <div class="detail-grid">
-                            ${{i.job_number ? `<div class="detail-item"><span class="detail-label">Job #</span>${{i.job_number}}</div>` : ''}}
-                            ${{i.premium ? `<div class="detail-item"><span class="detail-label">Premium</span>${{i.premium}}</div>` : ''}}
-                            ${{i.segment_code ? `<div class="detail-item"><span class="detail-label">Segment</span>${{i.segment_code}}</div>` : ''}}
-                        </div>
-                    </td>
-                    <td><span style="font-size:11px; font-weight:bold; padding:2px 8px; border-radius:10px; background:#f1f5f9;">${{i.category}}</span></td>
-                    <td><div style="font-size:16px; font-weight:bold;">${{i.owner}}</div><div style="font-size:13px; color:var(--muted);">${{i.audience}}</div></td>
-                    <td>${{i.link ? `<a href="${{i.link}}" class="link-btn" target="_blank">🔗 Link</a>` : ''}}</td>
-                </tr>
-            `).join('');
-        }}
-        document.getElementById('tapings').innerHTML = DATA.tapings.map(t => `<button class="taping-btn" onclick="jump('${{t.date}}')">${{t.date}}</button>`).join('');
-        document.getElementById('timeline').innerHTML = DATA.broadcast.map(i => `
-            <div class="timeline-item" data-date="${{i.date}}">
-                <div style="font-weight:bold; color:var(--blue);">${{i.date}}</div>
-                <div class="card">
-                    <div style="font-size:18px; font-weight:bold; color:var(--jv-blue);">${{i.title}}</div>
-                    <div style="color:var(--muted); margin:10px 0;">${{i.notes}}</div>
-                    <div class="detail-grid">
-                        <div class="detail-item"><span class="detail-label">Producer</span>${{i.owner}}</div>
-                        ${{i.premium ? `<div class="detail-item"><span class="detail-label">Premium</span>${{i.premium}}</div>` : ''}}
-                    </div>
-                    ${{i.link ? `<div style="margin-top:15px;"><a href="${{i.link}}" class="link-btn" target="_blank">🔗 Open Link</a></div>` : ''}}
-                </div>
-            </div>
-        `).join('');
-        render();
-    </script>
-</body>
-</html>"""
-    args.output.write_text(html_template, encoding='utf-8')
+    with open("template.html", "r") as f:
+        html_template = f.read()
+    html_template = html_template.replace("{payload}", payload)
+    args.output.write_text(html_template, encoding="utf-8")
 
 if __name__ == "__main__":
     main()
