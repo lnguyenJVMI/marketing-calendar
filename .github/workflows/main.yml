@@ -4,10 +4,11 @@ on:
     branches: [ main ]
     paths:
       - '**.xlsx'
+      - '**.csv'
       - 'generate_calendar.py'
   workflow_dispatch:
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # Opt into Node.js 24 to fix deprecation
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -20,8 +21,12 @@ jobs:
           python-version: '3.11'
       - run: pip install pandas openpyxl
       - name: Generate Calendar
-        run: python generate_calendar.py --xlsx "communications_calendar.xlsx" --output index.html
+        run: |
+          python generate_calendar.py \
+            --xlsx "Communications Calendar 2026.xlsx" \
+            --csv "Marketing_calendar.csv" \
+            --output index.html
       - uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "Auto-update calendar"
+          commit_message: "Auto-update calendar from multi-source"
           file_pattern: 'index.html'
