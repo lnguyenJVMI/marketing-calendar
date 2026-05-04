@@ -1,35 +1,45 @@
-name: Update Marketing Calendar
+name: Update Calendar
 
 on:
   push:
     paths:
-      - '.github/datafiles/**'
+      - ".github/datafiles/**"
+      - "template.html"
+      - "generate_calendar.py"
+      - ".github/workflows/update_calendar.yml"
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install pandas openpyxl
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas openpyxl
 
-      - name: Run generator script
+      - name: Generate index.html
         run: python generate_calendar.py
 
-      - name: Commit and push changes
+      - name: Commit and push if changed
         run: |
-          git config --global user.name 'GitHub Action'
-          git config --global user.email 'action@github.com'
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add index.html
-          git commit -m "Automated calendar update" || echo "No changes to commit"
-          git push
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "Auto-update index.html"
+            git push
+          fi
