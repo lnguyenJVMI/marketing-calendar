@@ -1,183 +1,482 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Marketing Calendar</title>
-    <style>
-        :root { --jv-blue: #1e3a8a; --blue: #0284c7; --bg: #f1f5f9; --ink: #1e293b; --muted: #64748b; }
-        body { font-family: 'Inter', sans-serif; margin: 0; background: var(--bg); color: var(--ink); padding-bottom: 100px; }
-        header { background: var(--jv-blue); color: white; padding: 20px 40px; }
-        main { max-width: 1500px; margin: 0 auto; padding: 20px; }
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Communications Calendar</title>
+<style>
+  :root{
+    --bg:#f5f6f8;
+    --panel:#ffffff;
+    --ink:#1f2328;
+    --muted:#6b7280;
+    --line:#e5e7eb;
+    --accent:#5b34d6;
+    --accent-soft:#ece7fb;
+    --today:#fff5d6;
+    --today-ring:#f0b400;
+    --chip:#eef0f3;
+    --pill-bg:#111111;
+    --pill-ink:#ffffff;
+    --shadow:0 10px 30px rgba(17,17,17,.18);
 
-        .floating-nav {
-            position: fixed;
-            bottom: 30px;
-            left: 50%;
-            transform: translateX(-50%);
-            background: rgba(30, 58, 138, 0.95);
-            backdrop-filter: blur(10px);
-            padding: 8px;
-            border-radius: 50px;
-            display: flex;
-            gap: 5px;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
-            z-index: 9999;
-            border: 1px solid rgba(255,255,255,0.2);
-        }
-        .nav-btn {
-            padding: 12px 24px;
-            border: none;
-            border-radius: 40px;
-            cursor: pointer;
-            font-weight: bold;
-            font-size: 14px;
-            background: transparent;
-            color: rgba(255,255,255,0.7);
-            transition: all 0.3s ease;
-        }
-        .nav-btn.active { background: white; color: var(--jv-blue); }
+    /* type colors */
+    --t-email:#dbeafe;     --t-email-ink:#1e3a8a;
+    --t-text:#dcfce7;      --t-text-ink:#14532d;
+    --t-dm:#fde2e2;        --t-dm-ink:#7f1d1d;
+    --t-social:#f3e8ff;    --t-social-ink:#581c87;
+    --t-print:#fef3c7;     --t-print-ink:#78350f;
+    --t-doc:#e0f2fe;       --t-doc-ink:#075985;
+    --t-stream:#fee2e2;    --t-stream-ink:#7f1d1d;
+    --t-other:#ece7fb;     --t-other-ink:#2a1a6f;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:1280px;margin:0 auto;padding:24px 20px 130px;}
+  header.top{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+  header.top h1{font-size:22px;margin:0;font-weight:700;letter-spacing:.2px}
+  header.top .meta{color:var(--muted);font-size:13px}
+  .month-nav{display:flex;align-items:center;gap:10px}
+  .month-nav button{
+    background:var(--panel);border:1px solid var(--line);border-radius:8px;
+    padding:8px 12px;font-size:14px;cursor:pointer;color:var(--ink);
+  }
+  .month-nav button:hover{background:#fafafa}
+  .month-nav .current{font-weight:700;font-size:16px;min-width:170px;text-align:center}
 
-        .panel { display: none; } .panel.active { display: block; }
-        .card { background: white; padding: 20px; border-radius: 12px; border: 1px solid #cbd5e1; margin-bottom: 20px; }
-        
-        table { width: 100%; border-collapse: collapse; font-size: 13px; }
-        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
-        th { background: #f8fafc; color: var(--muted); font-size: 10px; text-transform: uppercase; }
-        
-        .job-cell { font-weight: bold; color: var(--jv-blue); font-family: monospace; font-size: 14px; }
-        .premium-cell { color: #b45309; font-weight: 500; }
-        
-        .link-btn { background: var(--blue); color: white; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-size: 11px; font-weight: bold; display: inline-block; }
-        
-        .taping-btn { background: #fff7ed; border: 1px solid #fed7aa; color: #9a3412; padding: 10px 20px; border-radius: 25px; cursor: pointer; font-weight: bold; margin: 5px; }
-        .timeline-item { border-left: 3px solid var(--blue); padding: 0 0 40px 25px; position: relative; margin-left: 15px; }
-        .timeline-item::before { content: ""; position: absolute; left: -11px; top: 0; width: 18px; height: 18px; background: white; border: 4px solid var(--blue); border-radius: 50%; }
-    </style>
+  /* Calendar grid */
+  .calendar{background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.03);}
+  .dow{display:grid;grid-template-columns:repeat(7,1fr);background:#fafbfc;border-bottom:1px solid var(--line);}
+  .dow div{padding:10px 12px;font-size:12px;font-weight:600;color:var(--muted);
+    text-transform:uppercase;letter-spacing:.6px;text-align:left;border-right:1px solid var(--line);}
+  .dow div:last-child{border-right:none}
+  .grid{display:grid;grid-template-columns:repeat(7,1fr);grid-auto-rows:minmax(135px,auto);}
+  .cell{border-right:1px solid var(--line);border-bottom:1px solid var(--line);
+    padding:8px 8px 10px;min-height:135px;position:relative;background:var(--panel);}
+  .cell:nth-child(7n){border-right:none}
+  .cell.out{background:#fafbfc;color:#aab1bb}
+  .cell.today{background:var(--today)}
+  .cell.today .daynum{background:var(--today-ring);color:#1f2328;border-radius:999px;
+    width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;}
+  .daynum{font-size:12px;font-weight:600;color:#374151;display:inline-block;margin-bottom:6px;}
+  .events{display:flex;flex-direction:column;gap:3px}
+  .event{
+    background:var(--t-other);color:var(--t-other-ink);
+    border-left:3px solid var(--accent);
+    padding:3px 6px;font-size:11.5px;line-height:1.25;border-radius:4px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:default;
+  }
+  .event small{display:block;color:#5a4ab0;font-size:10px;margin-top:1px;font-weight:600;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .event.t-email{background:var(--t-email);color:var(--t-email-ink);border-left-color:#1e40af}
+  .event.t-text{background:var(--t-text);color:var(--t-text-ink);border-left-color:#15803d}
+  .event.t-dm{background:var(--t-dm);color:var(--t-dm-ink);border-left-color:#b91c1c}
+  .event.t-social{background:var(--t-social);color:var(--t-social-ink);border-left-color:#7e22ce}
+  .event.t-print{background:var(--t-print);color:var(--t-print-ink);border-left-color:#b45309}
+  .event.t-doc{background:var(--t-doc);color:var(--t-doc-ink);border-left-color:#0369a1}
+  .event.t-stream{background:var(--t-stream);color:var(--t-stream-ink);border-left-color:#b91c1c}
+  .event.taping{background:#fde68a;color:#7a4f00;border-left-color:#a16207}
+  .event.premium{box-shadow:inset 0 0 0 1px #d68a00}
+  .event small em{font-style:normal;color:inherit;opacity:.85}
+  .legend{display:flex;flex-wrap:wrap;gap:10px;margin:10px 0 14px;font-size:12px;color:var(--muted)}
+  .legend .sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:middle}
+
+  /* List/standing/tapings tables */
+  .list-view{display:none;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .list-view table{width:100%;border-collapse:collapse;font-size:14px}
+  .list-view thead th{text-align:left;background:#fafbfc;border-bottom:1px solid var(--line);
+    padding:12px 14px;font-size:12px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);}
+  .list-view tbody td{padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:top;}
+  .list-view tbody tr:last-child td{border-bottom:none}
+  .badge{display:inline-block;padding:2px 8px;font-size:11px;border-radius:999px;background:var(--chip);color:#374151;font-weight:600}
+  .badge.prem{background:#fff1d6;color:#7a5500}
+  .badge.taping{background:#fde68a;color:#7a4f00}
+
+  /* Floating nav pill */
+  .floating-nav{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);
+    background:var(--pill-bg);color:var(--pill-ink);border-radius:999px;padding:6px;
+    display:flex;gap:4px;box-shadow:var(--shadow);z-index:50;}
+  .floating-nav button{background:transparent;border:0;color:#cfcfcf;
+    padding:10px 18px;font-size:14px;font-weight:600;border-radius:999px;cursor:pointer;}
+  .floating-nav button.active{background:#ffffff;color:#111}
+  .floating-nav button:hover:not(.active){color:#fff}
+
+  .empty{padding:40px;text-align:center;color:var(--muted)}
+
+  @media (max-width:780px){
+    .grid{grid-auto-rows:minmax(96px,auto)}
+    .cell{min-height:96px;padding:6px}
+    .event{font-size:11px}
+    header.top h1{font-size:18px}
+  }
+</style>
 </head>
 <body>
-    <header>
-        <div style="max-width: 1500px; margin: 0 auto; display: flex; justify-content: space-between; align-items: center;">
-            <h1 style="margin:0;">Marketing Calendar</h1>
-            <div style="font-size: 12px; opacity: 0.8;">Last Updated: <span id="update-date"></span></div>
-        </div>
-    </header>
-    
-    <div class="floating-nav">
-        <button class="nav-btn active" onclick="showTab('cal', event)">Calendar View</button>
-        <button class="nav-btn" onclick="showTab('bc', event)">Broadcast Schedule</button>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1 id="report-title">Communications Calendar</h1>
+      <div class="meta" id="report-sub">Monthly view of dated communications</div>
     </div>
+    <div class="month-nav" id="monthNav">
+      <button id="prevBtn" aria-label="Previous month">&larr;</button>
+      <div class="current" id="currentLabel">—</div>
+      <button id="nextBtn" aria-label="Next month">&rarr;</button>
+      <button id="todayBtn" title="Jump to today">Today</button>
+    </div>
+  </header>
 
-    <main>
-        <div id="cal" class="panel active">
-            <div class="card"><input type="text" id="search" placeholder="Search events, jobs, or premiums..." oninput="render()" style="width:100%; padding:14px; border-radius:8px; border:1px solid #cbd5e1; font-size: 16px; box-sizing: border-box;"></div>
-            <div class="card" style="padding:0; overflow-x:auto;">
-                <table>
-                    <thead>
-                        <tr>
-                            <th style="width:100px;">Date</th>
-                            <th>Communication</th>
-                            <th style="width:100px;">Job #</th>
-                            <th style="width:180px;">Premium</th>
-                            <th style="width:100px;">Type</th>
-                            <th style="width:180px;">Producer/Audience</th>
-                            <th style="width:80px;">Link</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tbody"></tbody>
-                </table>
-            </div>
-        </div>
-        <div id="bc" class="panel">
-            <div class="card"><h3>Taping Sessions</h3><div id="tapings"></div></div>
-            <div id="timeline"></div>
-        </div>
-    </main>
+  <div class="legend" id="legend">
+    <span><span class="sw" style="background:var(--t-email)"></span>Email</span>
+    <span><span class="sw" style="background:var(--t-text)"></span>Text</span>
+    <span><span class="sw" style="background:var(--t-dm)"></span>DM</span>
+    <span><span class="sw" style="background:var(--t-social)"></span>Social</span>
+    <span><span class="sw" style="background:var(--t-print)"></span>Print</span>
+    <span><span class="sw" style="background:var(--t-doc)"></span>Document</span>
+    <span><span class="sw" style="background:#fde68a"></span>Taping</span>
+    <span><span class="sw" style="background:#fff1d6;border:1px solid #d68a00"></span>Premium</span>
+  </div>
 
-    <script>
-        var DATA = __PAYLOAD_PLACEHOLDER__;
-        document.getElementById('update-date').innerText = DATA.updated;
-        
-        function showTab(id, event) {
-            var panels = document.querySelectorAll(".panel");
-            var btns = document.querySelectorAll(".nav-btn");
-            for (var p = 0; p < panels.length; p++) { panels[p].classList.remove('active'); }
-            for (var b = 0; b < btns.length; b++) { btns[b].classList.remove('active'); }
-            document.getElementById(id).classList.add('active');
-            if (event && event.currentTarget) event.currentTarget.classList.add('active');
+  <!-- Calendar grid -->
+  <section class="calendar" id="calendarView">
+    <div class="dow">
+      <div>Sun</div><div>Mon</div><div>Tue</div><div>Wed</div>
+      <div>Thu</div><div>Fri</div><div>Sat</div>
+    </div>
+    <div class="grid" id="calGrid"></div>
+  </section>
+
+  <!-- Dated list -->
+  <section class="list-view" id="listView">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Description</th>
+          <th>Type</th>
+          <th>Producer</th>
+          <th>Audience</th>
+          <th>BBS Job #</th>
+          <th>Premium</th>
+          <th>Vanity Link</th>
+        </tr>
+      </thead>
+      <tbody id="listBody"></tbody>
+    </table>
+  </section>
+
+  <!-- Standing communications -->
+  <section class="list-view" id="standingView">
+    <table>
+      <thead>
+        <tr>
+          <th>Communication</th>
+          <th>Abbrev.</th>
+          <th>Type</th>
+          <th>How Often</th>
+          <th>Audience</th>
+          <th>Subject</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody id="standingBody"></tbody>
+    </table>
+  </section>
+
+  <!-- Tapings -->
+  <section class="list-view" id="tapingsView">
+    <table>
+      <thead>
+        <tr>
+          <th>Label</th>
+          <th>Start</th>
+          <th>End</th>
+        </tr>
+      </thead>
+      <tbody id="tapingsBody"></tbody>
+    </table>
+  </section>
+</div>
+
+<!-- Floating navigation pill -->
+<nav class="floating-nav" role="tablist" aria-label="View switcher">
+  <button id="btnCal" class="active" type="button">Calendar</button>
+  <button id="btnList" type="button">Schedule List</button>
+  <button id="btnStanding" type="button">Standing Comms</button>
+  <button id="btnTapings" type="button">Tapings</button>
+</nav>
+
+<script>
+  // Data injected by generate_calendar.py
+  var DATA = __PAYLOAD_PLACEHOLDER__;
+
+  var EVENTS   = (DATA && DATA.events)   ? DATA.events   : [];
+  var STANDING = (DATA && DATA.standing) ? DATA.standing : [];
+  var TAPINGS  = (DATA && DATA.tapings)  ? DATA.tapings  : [];
+
+  // ---------- helpers ----------
+  function pad(n){ return n < 10 ? "0" + n : "" + n; }
+  function parseDate(s){
+    if(!s) return null;
+    if(s instanceof Date) return s;
+    var m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if(m) return new Date(parseInt(m[1],10), parseInt(m[2],10)-1, parseInt(m[3],10));
+    var d = new Date(s);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  function sameDay(a,b){
+    return a && b && a.getFullYear()===b.getFullYear()
+      && a.getMonth()===b.getMonth() && a.getDate()===b.getDate();
+  }
+  function fmtDateLong(d){
+    return d.toLocaleDateString(undefined,{weekday:"short",month:"short",day:"numeric",year:"numeric"});
+  }
+  function fmtMonthYear(d){
+    return d.toLocaleDateString(undefined,{month:"long",year:"numeric"});
+  }
+  function escapeHtml(s){
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){
+      return ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"})[c];
+    });
+  }
+  function typeClass(t){
+    var s = String(t || "").toLowerCase();
+    if(/email|newsletter/.test(s)) return "t-email";
+    if(/\btext\b|sms/.test(s)) return "t-text";
+    if(/\bdm\b|direct mail|mail/.test(s)) return "t-dm";
+    if(/social|facebook|instagram|twitter|tiktok|youtube post/.test(s)) return "t-social";
+    if(/print/.test(s)) return "t-print";
+    if(/document|doc/.test(s)) return "t-doc";
+    if(/stream|live|webinar|broadcast/.test(s)) return "t-stream";
+    return "t-other";
+  }
+
+  // Normalize events
+  var EV = EVENTS.map(function(it){
+    var d = parseDate(it.date);
+    return {
+      raw: it,
+      date: d,
+      title: it.title || "(untitled)",
+      producer: it.producer || "",
+      type: it.type || "",
+      audience: it.audience || "",
+      job: it.job || "",
+      vanity: it.vanity || "",
+      premium: !!it.premium,
+      art: it.art || "",
+      segment: it.segment || ""
+    };
+  }).filter(function(e){ return e.date; });
+  EV.sort(function(a,b){ return a.date - b.date; });
+
+  // Convert taping ranges into per-day calendar markers too
+  var TAPING_DAYS = {}; // key yyyy-mm-dd -> [labels]
+  TAPINGS.forEach(function(t){
+    var s = parseDate(t.start), e = parseDate(t.end || t.start);
+    if(!s) return;
+    if(!e || isNaN(e.getTime())) e = s;
+    for(var d = new Date(s); d <= e; d.setDate(d.getDate()+1)){
+      var k = d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+      (TAPING_DAYS[k] = TAPING_DAYS[k] || []).push(t.label || "Taping");
+    }
+  });
+
+  // ---------- state ----------
+  var today = new Date(); today.setHours(0,0,0,0);
+  var view = (function(){
+    if(EV.length){
+      // Prefer current month if it has events, else jump to first event's month
+      var now = new Date(today.getFullYear(), today.getMonth(), 1);
+      var hasNow = EV.some(function(e){
+        return e.date.getFullYear()===now.getFullYear() && e.date.getMonth()===now.getMonth();
+      });
+      if(hasNow) return now;
+      var first = new Date(EV[0].date); first.setDate(1); return first;
+    }
+    var d = new Date(today); d.setDate(1); return d;
+  })();
+
+  // ---------- render calendar ----------
+  function renderCalendar(){
+    var grid = document.getElementById("calGrid");
+    grid.innerHTML = "";
+    document.getElementById("currentLabel").textContent = fmtMonthYear(view);
+
+    var year = view.getFullYear(), month = view.getMonth();
+    var firstOfMonth = new Date(year, month, 1);
+    var startDayOfWeek = firstOfMonth.getDay();
+    var gridStart = new Date(year, month, 1 - startDayOfWeek);
+
+    var byDay = {};
+    EV.forEach(function(ev){
+      var key = ev.date.getFullYear()+"-"+pad(ev.date.getMonth()+1)+"-"+pad(ev.date.getDate());
+      (byDay[key] = byDay[key] || []).push(ev);
+    });
+
+    for(var i=0;i<42;i++){
+      var d = new Date(gridStart);
+      d.setDate(gridStart.getDate()+i);
+      var inMonth = d.getMonth() === month;
+      var key = d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+
+      var cell = document.createElement("div");
+      cell.className = "cell" + (inMonth ? "" : " out") + (sameDay(d,today) ? " today" : "");
+
+      var dayNum = document.createElement("span");
+      dayNum.className = "daynum";
+      dayNum.textContent = d.getDate();
+      cell.appendChild(dayNum);
+
+      var evWrap = document.createElement("div");
+      evWrap.className = "events";
+
+      // Tapings first
+      (TAPING_DAYS[key] || []).forEach(function(label){
+        var el = document.createElement("div");
+        el.className = "event taping";
+        el.textContent = "🎬 " + label;
+        el.title = "Taping: " + label;
+        evWrap.appendChild(el);
+      });
+
+      (byDay[key] || []).forEach(function(ev){
+        var el = document.createElement("div");
+        el.className = "event " + typeClass(ev.type) + (ev.premium ? " premium" : "");
+        el.textContent = ev.title;
+        var meta = [];
+        if(ev.type) meta.push(ev.type);
+        if(ev.job)  meta.push("Job " + ev.job);
+        if(ev.premium) meta.push("Premium");
+        if(meta.length){
+          var s = document.createElement("small");
+          s.textContent = meta.join(" · ");
+          el.appendChild(s);
         }
+        var tip = ev.title;
+        if(ev.type)     tip += "\nType: " + ev.type;
+        if(ev.producer) tip += "\nProducer: " + ev.producer;
+        if(ev.audience) tip += "\nAudience: " + ev.audience;
+        if(ev.job)      tip += "\nJob #: " + ev.job;
+        if(ev.premium)  tip += "\nPremium";
+        if(ev.vanity)   tip += "\nLink: " + ev.vanity;
+        el.title = tip;
+        evWrap.appendChild(el);
+      });
 
-        function jump(date) {
-            var panels = document.querySelectorAll(".panel");
-            var btns = document.querySelectorAll(".nav-btn");
-            for (var p = 0; p < panels.length; p++) { panels[p].classList.remove('active'); }
-            for (var b = 0; b < btns.length; b++) { btns[b].classList.remove('active'); }
-            document.getElementById('bc').classList.add('active');
-            btns[1].classList.add('active');
-            setTimeout(function() {
-                var el = document.querySelector('[data-date="' + date + '"]');
-                if (el) el.scrollIntoView({behavior:'smooth', block:'center'});
-            }, 100);
-        }
+      cell.appendChild(evWrap);
+      grid.appendChild(cell);
+    }
+  }
 
-        function render() {
-            var s = document.getElementById('search').value.toLowerCase();
-            var filtered = [];
-            for (var f = 0; f < DATA.items.length; f++) {
-                var item = DATA.items[f];
-                var content = (item.title || '') + (item.notes || '') + (item.job_number || '') + (item.premium || '') + (item.owner || '') + (item.audience || '');
-                if (content.toLowerCase().indexOf(s) !== -1) {
-                    filtered.push(item);
-                }
-            }
-            
-            var html = '';
-            for (var k = 0; k < filtered.length; k++) {
-                var i = filtered[k];
-                var dateStr = i.date || 'Undated';
-                html += '<tr>';
-                html += '<td style="font-weight:bold; color:var(--jv-blue); white-space:nowrap;">' + dateStr + '</td>';
-                html += '<td style="font-weight:bold; font-size:14px;">' + i.title + '</td>';
-                html += '<td class="job-cell">' + (i.job_number || '') + '</td>';
-                html += '<td class="premium-cell">' + (i.premium || '') + '</td>';
-                html += '<td><span style="font-size:10px; font-weight:bold; padding:3px 8px; border-radius:10px; background:#e2e8f0; color:var(--jv-blue);">' + i.category + '</span></td>';
-                html += '<td><div style="font-weight:bold; color:var(--ink);">' + i.owner + '</div><div style="font-size:12px; color:var(--muted);">' + i.audience + '</div></td>';
-                if (i.link) {
-                    html += '<td><a href="' + i.link + '" class="link-btn" target="_blank">Open</a></td>';
-                } else {
-                    html += '<td></td>';
-                }
-                html += '</tr>';
-            }
-            document.getElementById('tbody').innerHTML = html;
-        }
+  // ---------- render dated list ----------
+  function renderList(){
+    var body = document.getElementById("listBody");
+    body.innerHTML = "";
+    if(!EV.length){
+      body.innerHTML = '<tr><td colspan="8" class="empty">No dated communications.</td></tr>';
+      return;
+    }
+    EV.forEach(function(ev){
+      var tr = document.createElement("tr");
+      var link = ev.vanity ? '<a href="' + escapeHtml(ev.vanity) + '" target="_blank" rel="noopener">' + escapeHtml(ev.vanity) + '</a>' : "—";
+      tr.innerHTML =
+        "<td>" + fmtDateLong(ev.date) + "</td>" +
+        "<td><strong>" + escapeHtml(ev.title) + "</strong>" +
+          (ev.segment ? '<div style="color:#6b7280;font-size:12px;margin-top:2px">Segment: ' + escapeHtml(ev.segment) + "</div>" : "") +
+        "</td>" +
+        "<td>" + (ev.type ? '<span class="badge">' + escapeHtml(ev.type) + "</span>" : "—") + "</td>" +
+        "<td>" + (ev.producer ? escapeHtml(ev.producer) : "—") + "</td>" +
+        "<td>" + (ev.audience ? escapeHtml(ev.audience) : "—") + "</td>" +
+        "<td>" + (ev.job ? '<span class="badge">' + escapeHtml(ev.job) + "</span>" : "—") + "</td>" +
+        "<td>" + (ev.premium ? '<span class="badge prem">Premium</span>' : "—") + "</td>" +
+        "<td>" + link + "</td>";
+      body.appendChild(tr);
+    });
+  }
 
-        // Render tapings
-        var tapingsHtml = '';
-        for (var t = 0; t < DATA.tapings.length; t++) {
-            tapingsHtml += '<button class="taping-btn" onclick="jump(\'' + DATA.tapings[t].date + '\')">' + DATA.tapings[t].date + '</button>';
-        }
-        document.getElementById('tapings').innerHTML = tapingsHtml;
+  // ---------- render standing ----------
+  function renderStanding(){
+    var body = document.getElementById("standingBody");
+    body.innerHTML = "";
+    if(!STANDING.length){
+      body.innerHTML = '<tr><td colspan="7" class="empty">No standing communications.</td></tr>';
+      return;
+    }
+    STANDING.forEach(function(s){
+      var tr = document.createElement("tr");
+      tr.innerHTML =
+        "<td><strong>" + escapeHtml(s.name) + "</strong></td>" +
+        "<td>" + (s.abbreviation ? '<span class="badge">' + escapeHtml(s.abbreviation) + "</span>" : "—") + "</td>" +
+        "<td>" + (s.type ? escapeHtml(s.type) : "—") + "</td>" +
+        "<td>" + (s.frequency ? '<span class="badge">' + escapeHtml(s.frequency) + "</span>" : "—") + "</td>" +
+        "<td>" + (s.audience ? escapeHtml(s.audience) : "—") + "</td>" +
+        "<td>" + (s.subject ? escapeHtml(s.subject) : "—") + "</td>" +
+        "<td>" + (s.notes ? escapeHtml(s.notes) : "—") + "</td>";
+      body.appendChild(tr);
+    });
+  }
 
-        // Render broadcast timeline
-        var timelineHtml = '';
-        for (var b = 0; b < DATA.broadcast.length; b++) {
-            var item = DATA.broadcast[b];
-            timelineHtml += '<div class="timeline-item" data-date="' + item.date + '">';
-            timelineHtml += '<div style="font-weight:bold; color:var(--blue); font-size:16px; margin-bottom:8px;">' + item.date + '</div>';
-            timelineHtml += '<div class="card">';
-            timelineHtml += '<div style="font-size:20px; font-weight:bold; color:var(--jv-blue);">' + item.title + '</div>';
-            if (item.notes) { timelineHtml += '<div style="color:var(--muted); margin:12px 0; line-height:1.5;">' + item.notes + '</div>'; }
-            timelineHtml += '<div style="display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin-top:10px;">';
-            timelineHtml += '<div style="font-size:11px; color:var(--muted); background:#f8fafc; padding:8px; border-radius:4px;"><strong style="display:block; font-size:9px; text-transform:uppercase; color:var(--jv-blue);">Job #</strong>' + (item.job_number || 'N/A') + '</div>';
-            timelineHtml += '<div style="font-size:11px; color:var(--muted); background:#f8fafc; padding:8px; border-radius:4px;"><strong style="display:block; font-size:9px; text-transform:uppercase; color:var(--jv-blue);">Premium</strong>' + (item.premium || 'N/A') + '</div>';
-            timelineHtml += '<div style="font-size:11px; color:var(--muted); background:#f8fafc; padding:8px; border-radius:4px;"><strong style="display:block; font-size:9px; text-transform:uppercase; color:var(--jv-blue);">Producer</strong>' + item.owner + '</div>';
-            timelineHtml += '</div>';
-            if (item.link) { timelineHtml += '<div style="margin-top:15px;"><a href="' + item.link + '" class="link-btn" target="_blank" style="padding:10px 20px;">Open Link</a></div>'; }
-            timelineHtml += '</div></div>';
-        }
-        document.getElementById('timeline').innerHTML = timelineHtml;
+  // ---------- render tapings ----------
+  function renderTapings(){
+    var body = document.getElementById("tapingsBody");
+    body.innerHTML = "";
+    if(!TAPINGS.length){
+      body.innerHTML = '<tr><td colspan="3" class="empty">No tapings scheduled.</td></tr>';
+      return;
+    }
+    TAPINGS.forEach(function(t){
+      var s = parseDate(t.start), e = parseDate(t.end);
+      var tr = document.createElement("tr");
+      tr.innerHTML =
+        "<td><span class=\"badge taping\">" + escapeHtml(t.label) + "</span></td>" +
+        "<td>" + (s ? fmtDateLong(s) : "—") + "</td>" +
+        "<td>" + (e ? fmtDateLong(e) : "—") + "</td>";
+      body.appendChild(tr);
+    });
+  }
 
-        render();
-    </script>
+  // ---------- view switching ----------
+  var VIEWS = {
+    cal:      ["calendarView", "btnCal"],
+    list:     ["listView", "btnList"],
+    standing: ["standingView", "btnStanding"],
+    tapings:  ["tapingsView", "btnTapings"],
+  };
+  function showView(key){
+    Object.keys(VIEWS).forEach(function(k){
+      var s = document.getElementById(VIEWS[k][0]);
+      var b = document.getElementById(VIEWS[k][1]);
+      var on = (k === key);
+      s.style.display = on ? (k === "cal" ? "" : "block") : "none";
+      b.classList.toggle("active", on);
+    });
+    document.getElementById("monthNav").style.visibility = (key === "cal") ? "visible" : "hidden";
+    document.getElementById("legend").style.display = (key === "cal") ? "" : "none";
+  }
+  document.getElementById("btnCal").addEventListener("click", function(){ showView("cal"); });
+  document.getElementById("btnList").addEventListener("click", function(){ showView("list"); });
+  document.getElementById("btnStanding").addEventListener("click", function(){ showView("standing"); });
+  document.getElementById("btnTapings").addEventListener("click", function(){ showView("tapings"); });
+
+  document.getElementById("prevBtn").addEventListener("click", function(){
+    view = new Date(view.getFullYear(), view.getMonth()-1, 1); renderCalendar();
+  });
+  document.getElementById("nextBtn").addEventListener("click", function(){
+    view = new Date(view.getFullYear(), view.getMonth()+1, 1); renderCalendar();
+  });
+  document.getElementById("todayBtn").addEventListener("click", function(){
+    view = new Date(today.getFullYear(), today.getMonth(), 1); renderCalendar();
+  });
+
+  // ---------- initial render ----------
+  renderCalendar();
+  renderList();
+  renderStanding();
+  renderTapings();
+  showView("cal");
+</script>
 </body>
 </html>
