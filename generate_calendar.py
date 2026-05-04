@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Jewish Voice Marketing Calendar Generator - Hyperlink Extraction Version.
-Extracts actual URLs from Excel cells instead of just the display text.
+Jewish Voice Marketing Calendar Generator - Final Robust Version.
+Extracts actual URLs from Excel cells and handles auto-discovery of latest files.
 """
 
 from __future__ import annotations
@@ -11,10 +11,10 @@ import html
 import json
 import re
 import os
-from dataclasses import dataclass, asdict, field
+from dataclasses import dataclass, asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Iterable, Optional, Dict, Any
+from typing import Iterable, Optional
 
 import pandas as pd
 import openpyxl
@@ -75,16 +75,57 @@ def parse_date(value: object) -> str:
         return parsed.strftime("%Y-%m-%d")
     return text
 
+def process_dataframe(df: pd.DataFrame, source_name: str) -> list[CalendarItem]:
+    items = []
+    cols = df.columns
+    c_desc = find_col_idx(cols, "Description") or find_col_idx(cols, "Name of Communication") or find_col_idx(cols, "Title") or find_col_idx(cols, "Task Name")
+    c_date = find_col_idx(cols, "Target Date") or find_col_idx(cols, "Air Date") or find_col_idx(cols, "Due Date") or find_col_idx(cols, "Date")
+    c_type = find_col_idx(cols, "Type") or find_col_idx(cols, "Category") or find_col_idx(cols, "Section")
+    c_prod = find_col_idx(cols, "Producer") or find_col_idx(cols, "Owner") or find_col_idx(cols, "Assignee")
+    c_aud = find_col_idx(cols, "Audience")
+    c_link = find_col_idx(cols, "Vanity Link") or find_col_idx(cols, "Ops Database for Offer Codes") or find_col_idx(cols, "Vanity linl") or find_col_idx(cols, "Link")
+    c_job = find_col_idx(cols, "BBS Job Number") or find_col_idx(headers, "Job Number")
+    c_prem = find_col_idx(cols, "Premium")
+    c_art = find_col_idx(cols, "BBS Final Art") or find_col_idx(headers, "Final Art")
+    c_seg = find_col_idx(cols, "Segment Code")
+    c_notes = find_col_idx(cols, "Notes") or find_col_idx(headers, "Subject")
+
+    if c_desc is None:
+        return items
+
+    for _, row in df.iterrows():
+        title = normalized(row.iloc[c_desc])
+        if not title: continue
+        
+        date = parse_date(row.iloc[c_date]) if c_date is not None else ""
+        category = normalized(row.iloc[c_type]) if c_type is not None else "General"
+        
+        if "broadcast" in (title + " " + category).lower() or "tv" in (title + " " + category).lower():
+            category = "Broadcast/TV"
+
+        items.append(CalendarItem(
+            title=title, date=date, source=source_name, category=category,
+            owner=normalized(row.iloc[c_prod]) if c_prod is not None else "",
+            audience=normalized(row.iloc[c_aud]) if c_aud is not None else "",
+            link=normalized(row.iloc[c_link]) if c_link is not None else "",
+            notes=normalized(row.iloc[c_notes]) if c_notes is not None else "",
+            job_number=normalized(row.iloc[c_job]) if c_job is not None else "",
+            premium=normalized(row.iloc[c_prem]) if c_prem is not None else "",
+            final_art=normalized(row.iloc[c_art]) if c_art is not None else "",
+            segment_code=normalized(row.iloc[c_seg]) if c_seg is not None else "",
+        ))
+    return items
+
 def extract_excel_with_links(path: Path) -> list[CalendarItem]:
     items = []
     wb = openpyxl.load_workbook(path, data_only=False)
     
-    for sheet_name in wb.sheet_names:
+    for sheet_name in wb.sheetnames:
         if "taping" in sheet_name.lower():
             continue
             
         ws = wb[sheet_name]
-        rows = list(ws.values)
+        rows = list(ws.iter_rows(values_only=True))
         if not rows: continue
         
         headers = [str(h) for h in rows[0]]
@@ -109,14 +150,12 @@ def extract_excel_with_links(path: Path) -> list[CalendarItem]:
             title = normalized(row_vals[c_desc].value)
             if not title: continue
             
-            # Extract Link URL specifically
             link_url = ""
             if c_link is not None:
                 cell = row_vals[c_link]
                 if cell.hyperlink:
                     link_url = cell.hyperlink.target
                 else:
-                    # Fallback to text if it looks like a URL
                     val = normalized(cell.value)
                     if val.startswith("http"):
                         link_url = val
@@ -155,7 +194,6 @@ def load_latest_from_folder(folder_path: Path) -> tuple[list[CalendarItem], list
         print(f"Processing Latest Excel: {latest_xlsx.name}")
         all_items.extend(extract_excel_with_links(latest_xlsx))
         
-        # Still need tapings from the same file
         try:
             xl = pd.ExcelFile(latest_xlsx)
             for sheet in xl.sheet_names:
@@ -173,20 +211,7 @@ def load_latest_from_folder(folder_path: Path) -> tuple[list[CalendarItem], list
         print(f"Processing Latest CSV: {latest_csv.name}")
         try:
             df_csv = pd.read_csv(latest_csv)
-            # CSVs don't have hidden hyperlinks, so we use the standard processor
-            from generate_calendar import process_dataframe # type: ignore
-            # (Self-contained fallback for process_dataframe logic)
-            cols = df_csv.columns
-            c_desc = find_col_idx(cols, "Description") or find_col_idx(cols, "Task Name")
-            c_date = find_col_idx(cols, "Target Date") or find_col_idx(cols, "Due Date")
-            if c_desc is not None:
-                for _, row in df_csv.iterrows():
-                    title = normalized(row.iloc[c_desc])
-                    if title:
-                        all_items.append(CalendarItem(
-                            title=title, date=parse_date(row.iloc[c_date]) if c_date is not None else "",
-                            source=f"CSV ({latest_csv.name})", category="General"
-                        ))
+            all_items.extend(process_dataframe(df_csv, f"CSV ({latest_csv.name})"))
         except Exception as e:
             print(f"Error reading CSV: {e}")
             
