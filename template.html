@@ -254,8 +254,24 @@
   }
 
   // Normalize events
+  // Returns an absolute URL only when the value LOOKS like a URL/domain.
+  // Otherwise returns "" so the UI will render the raw text instead of a broken link.
+  function normalizeUrl(u){
+    var s = String(u || "").trim();
+    if(!s) return "";
+    if(/\s/.test(s)) return "";                              // contains spaces -> not a URL
+    if(/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) return s;          // already absolute http(s)://
+    if(/^mailto:|^tel:/i.test(s)) return s;
+    // bare domain like jewishvoice.org/book or www.foo.com
+    if(/^(?:www\.)?[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)+(?:\/[\S]*)?$/i.test(s)){
+      return "https://" + s.replace(/^\/+/, "");
+    }
+    return "";  // not URL-like -> caller will render as plain text
+  }
   var EV = EVENTS.map(function(it){
     var d = parseDate(it.date);
+    var prem = (typeof it.premium === "string") ? it.premium
+             : (it.premium ? "Premium" : "");
     return {
       raw: it,
       date: d,
@@ -265,7 +281,9 @@
       audience: it.audience || "",
       job: it.job || "",
       vanity: it.vanity || "",
-      premium: !!it.premium,
+      vanity_href: normalizeUrl(it.vanity),
+      premium: prem,                 // string: "" means none
+      premium_on: !!(prem && prem.toLowerCase() !== "none"),
       art: it.art || "",
       segment: it.segment || ""
     };
@@ -344,12 +362,12 @@
 
       (byDay[key] || []).forEach(function(ev){
         var el = document.createElement("div");
-        el.className = "event " + typeClass(ev.type) + (ev.premium ? " premium" : "");
+        el.className = "event " + typeClass(ev.type) + (ev.premium_on ? " premium" : "");
         el.textContent = ev.title;
         var meta = [];
         if(ev.type) meta.push(ev.type);
         if(ev.job)  meta.push("Job " + ev.job);
-        if(ev.premium) meta.push("Premium");
+        if(ev.premium_on) meta.push("Premium: " + ev.premium);
         if(meta.length){
           var s = document.createElement("small");
           s.textContent = meta.join(" · ");
@@ -359,9 +377,9 @@
         if(ev.type)     tip += "\nType: " + ev.type;
         if(ev.producer) tip += "\nProducer: " + ev.producer;
         if(ev.audience) tip += "\nAudience: " + ev.audience;
-        if(ev.job)      tip += "\nJob #: " + ev.job;
-        if(ev.premium)  tip += "\nPremium";
-        if(ev.vanity)   tip += "\nLink: " + ev.vanity;
+        if(ev.job)        tip += "\nJob #: " + ev.job;
+        if(ev.premium_on) tip += "\nPremium: " + ev.premium;
+        if(ev.vanity)     tip += "\nLink: " + ev.vanity;
         el.title = tip;
         evWrap.appendChild(el);
       });
@@ -381,7 +399,17 @@
     }
     EV.forEach(function(ev){
       var tr = document.createElement("tr");
-      var link = ev.vanity ? '<a href="' + escapeHtml(ev.vanity) + '" target="_blank" rel="noopener">' + escapeHtml(ev.vanity) + '</a>' : "—";
+      var link;
+      if(ev.vanity_href){
+        link = '<a href="' + escapeHtml(ev.vanity_href) + '" target="_blank" rel="noopener">' + escapeHtml(ev.vanity) + '</a>';
+      } else if(ev.vanity){
+        link = '<span style="color:#374151">' + escapeHtml(ev.vanity) + '</span>';
+      } else {
+        link = "—";
+      }
+      var premCell = ev.premium_on
+        ? '<span class="badge prem">Premium</span><div style="font-size:12px;color:#374151;margin-top:4px">' + escapeHtml(ev.premium) + '</div>'
+        : "—";
       tr.innerHTML =
         "<td>" + fmtDateLong(ev.date) + "</td>" +
         "<td><strong>" + escapeHtml(ev.title) + "</strong>" +
@@ -391,7 +419,7 @@
         "<td>" + (ev.producer ? escapeHtml(ev.producer) : "—") + "</td>" +
         "<td>" + (ev.audience ? escapeHtml(ev.audience) : "—") + "</td>" +
         "<td>" + (ev.job ? '<span class="badge">' + escapeHtml(ev.job) + "</span>" : "—") + "</td>" +
-        "<td>" + (ev.premium ? '<span class="badge prem">Premium</span>' : "—") + "</td>" +
+        "<td>" + premCell + "</td>" +
         "<td>" + link + "</td>";
       body.appendChild(tr);
     });

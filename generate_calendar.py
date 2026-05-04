@@ -87,17 +87,14 @@ def clean_str(v: Any) -> str:
     return str(v).strip()
 
 
-def coerce_premium(v: Any) -> bool:
+def coerce_premium(v: Any) -> str:
+    """Return the literal Premium offer text, or empty string for blank/none."""
     if _is_blank(v):
-        return False
-    if isinstance(v, bool):
-        return v
-    if isinstance(v, (int, float)):
-        try:
-            return bool(int(v))
-        except (TypeError, ValueError):
-            return bool(v)
-    return clean_str(v).lower() in {"true", "yes", "y", "1", "premium", "x", "✓", "✔"}
+        return ""
+    s = clean_str(v)
+    if s.lower() in {"none", "n/a", "na", "-", "—"}:
+        return ""
+    return s
 
 
 def to_iso_date(v: Any) -> str | None:
@@ -180,7 +177,7 @@ def parse_dated_sheet(df: pd.DataFrame) -> list[dict]:
             "audience": clean_str(row[c_audience]) if c_audience else "",
             "job": clean_str(row[c_job]) if c_job else "",
             "vanity": clean_str(row[c_vanity]) if c_vanity else "",
-            "premium": coerce_premium(row[c_premium]) if c_premium else False,
+            "premium": coerce_premium(row[c_premium]) if c_premium else "",
             "art": clean_str(row[c_art]) if c_art else "",
             "segment": clean_str(row[c_seg]) if c_seg else "",
         })
