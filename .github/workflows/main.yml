@@ -18,12 +18,8 @@ jobs:
           python-version: '3.11'
       - run: pip install pandas openpyxl
       - name: Generate Calendar
-        run: |
-          # This command now looks for your specific Excel file
-   python generate_calendar.py \
-            --xlsx "communications_calendar.xlsx" \
-            --output index.html
+        run: python generate_calendar.py --xlsx "communications_calendar.xlsx" --output index.html
       - uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "Auto-update calendar from Excel"
+          commit_message: "Auto-update calendar"
           file_pattern: 'index.html'
