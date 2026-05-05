@@ -68,14 +68,20 @@ def process_file(file_path, mapping):
                     # Normalize standing data
                     for _, row in df.iterrows():
                         if pd.isna(row.get('Name of Communication')): continue
+                        
+                        def clean_val(val):
+                            if pd.isna(val) or str(val).lower() == 'nan':
+                                return ""
+                            return str(val).strip()
+
                         all_standing.append({
-                            "name": str(row.get('Name of Communication', '')).strip(),
-                            "abbreviation": str(row.get('Nickname / Abbreviation', '')).strip() if not pd.isna(row.get('Nickname / Abbreviation')) else "",
-                            "type": str(row.get('Type', '')).strip(),
-                            "frequency": str(row.get('How Often', '')).strip(),
-                            "audience": str(row.get('Audience', '')).strip(),
-                            "subject": str(row.get('Subject', '')).strip() if not pd.isna(row.get('Subject')) else "",
-                            "notes": str(row.get('Notes', '')).strip() if not pd.isna(row.get('Notes')) else ""
+                            "name": clean_val(row.get('Name of Communication')),
+                            "abbreviation": clean_val(row.get('Nickname / Abbreviation')),
+                            "type": clean_val(row.get('Type')),
+                            "frequency": clean_val(row.get('How Often')),
+                            "audience": clean_val(row.get('Audience')),
+                            "subject": clean_val(row.get('Subject')),
+                            "notes": clean_val(row.get('Notes'))
                         })
                 elif "Taping" in sheet:
                     # Normalize tapings data
@@ -130,21 +136,26 @@ def normalize_events(raw_events, mapping):
 
         links = ev.get('_links', {})
         
+        def clean_val(val):
+            if pd.isna(val) or str(val).lower() == 'nan':
+                return ""
+            return str(val).strip()
+
         normalized.append({
             "date": date_str,
-            "title": str(ev.get(desc_col, "")).strip(),
-            "type": str(ev.get(type_col, "")).strip(),
-            "producer": str(ev.get(prod_col, "")).strip(),
-            "audience": str(ev.get(aud_col, "")).strip(),
-            "job": str(ev.get(job_col, "")).strip() if not pd.isna(ev.get(job_col)) else "",
-            "vanity": str(ev.get(van_col, "")).strip(),
+            "title": clean_val(ev.get(desc_col)),
+            "type": clean_val(ev.get(type_col)),
+            "producer": clean_val(ev.get(prod_col)),
+            "audience": clean_val(ev.get(aud_col)),
+            "job": clean_val(ev.get(job_col)),
+            "vanity": clean_val(ev.get(van_col)),
             "vanity_url": links.get("Vanity Link"),
-            "premium": str(ev.get(prem_col, "")).strip(),
+            "premium": clean_val(ev.get(prem_col)),
             "premium_url": links.get("Premium"),
-            "premium_on": str(ev.get(prem_col, "")).lower() not in ["", "nan", "none", "—"],
-            "art": str(ev.get(art_col, "")).strip(),
+            "premium_on": clean_val(ev.get(prem_col)).lower() not in ["", "nan", "none", "—"],
+            "art": clean_val(ev.get(art_col)),
             "art_url": links.get("BBS Final Art"),
-            "segment": str(ev.get(seg_col, "")).strip()
+            "segment": clean_val(ev.get(seg_col))
         })
     
     return sorted(normalized, key=lambda x: x['date'])
