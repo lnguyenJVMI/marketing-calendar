@@ -1,4 +1,4 @@
-# Free / Low-Cost Marketing Calendar + Broadcast Schedule
+#Marketing Calendar + Broadcast Schedule
 
 This starter kit reproduces the core outcome shown in the shared page: a **single standalone HTML calendar** with a full marketing calendar tab and a dedicated broadcast schedule tab. The recommended version costs **$0 in software and hosting** if your organization already has Asana and Microsoft 365/SharePoint, and it can remain close to $0 by using free static hosting.
 
